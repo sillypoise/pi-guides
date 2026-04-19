@@ -120,11 +120,16 @@ type PackageFilterEntry = {
 
 type PiSettings = {
     packages?: Array<string | PackageFilterEntry>;
+    piGuidesDevSource?: string;
+    custom?: {
+        piGuidesDevSource?: string;
+    };
 };
 
 type GuideInitOptions = {
     writeSettings: boolean;
     packageSourceOverride: string | null;
+    useDevSource: boolean;
     showHelp: boolean;
 };
 
@@ -309,6 +314,16 @@ function packageSourceString(entry: string | PackageFilterEntry): string | null 
     return null;
 }
 
+function settingsDevSource(settings: PiSettings): string | null {
+    if (typeof settings.piGuidesDevSource === "string") {
+        return settings.piGuidesDevSource;
+    }
+    if (typeof settings.custom?.piGuidesDevSource === "string") {
+        return settings.custom.piGuidesDevSource;
+    }
+    return null;
+}
+
 function resolveLocalPackageSourcePath(settingsDirectory: string, source: string): string | null {
     if (source.startsWith("npm:")) {
         return null;
@@ -327,6 +342,14 @@ function resolveLocalPackageSourcePath(settingsDirectory: string, source: string
         return resolve(source);
     }
     return resolve(settingsDirectory, source);
+}
+
+function resolveConfiguredDevSource(baseDirectory: string, source: string): string {
+    const localPath = resolveLocalPackageSourcePath(baseDirectory, source);
+    if (localPath === null) {
+        throw new Error("guide-init: --dev requires a local package path");
+    }
+    return localPath;
 }
 
 async function isCurrentPackageAvailableGlobally(): Promise<boolean> {
@@ -367,6 +390,48 @@ async function isCurrentPackageAvailableGlobally(): Promise<boolean> {
     return false;
 }
 
+async function resolveGuideInitDevSource(cwd: string): Promise<string> {
+    const envDevSource = process.env.PI_GUIDES_DEV_SOURCE;
+    if (typeof envDevSource === "string") {
+        const trimmedEnvDevSource = envDevSource.trim();
+        if (trimmedEnvDevSource.length > 0) {
+            return resolveConfiguredDevSource(cwd, trimmedEnvDevSource);
+        }
+    }
+
+    const projectSettingsPath = settingsConfigPath(cwd);
+    const projectSettingsPathState = await getPathState(projectSettingsPath);
+    if (projectSettingsPathState.kind === "exists") {
+        try {
+            const projectSettings = await readJsonFile<PiSettings>(projectSettingsPath);
+            const projectDevSource = settingsDevSource(projectSettings);
+            if (projectDevSource !== null) {
+                return resolveConfiguredDevSource(dirname(projectSettingsPath), projectDevSource);
+            }
+        } catch {
+            // Ignore invalid project settings here. guide-init should still work from env or global settings.
+        }
+    }
+
+    const globalPath = globalSettingsPath();
+    const globalPathState = await getPathState(globalPath);
+    if (globalPathState.kind === "exists") {
+        try {
+            const globalSettings = await readJsonFile<PiSettings>(globalPath);
+            const globalDevSource = settingsDevSource(globalSettings);
+            if (globalDevSource !== null) {
+                return resolveConfiguredDevSource(dirname(globalPath), globalDevSource);
+            }
+        } catch {
+            // Ignore invalid global settings here. guide-init will report the missing dev source explicitly.
+        }
+    }
+
+    throw new Error(
+        "guide-init: --dev requires PI_GUIDES_DEV_SOURCE or settings piGuidesDevSource",
+    );
+}
+
 function dedupe(values: string[]): string[] {
     const seen = new Set<string>();
     const result: string[] = [];
@@ -395,11 +460,16 @@ function parseGuideInitOptions(args: string | undefined): GuideInitOptions {
     const parts = splitArgs(args);
     let writeSettings = true;
     let packageSourceOverride: string | null = null;
+    let useDevSource = false;
     let showHelp = false;
 
     for (const part of parts) {
         if (part === "--no-settings") {
             writeSettings = false;
+            continue;
+        }
+        if (part === "--dev") {
+            useDevSource = true;
             continue;
         }
         if (part === "--help" || part === "-h") {
@@ -415,9 +485,19 @@ function parseGuideInitOptions(args: string | undefined): GuideInitOptions {
         packageSourceOverride = part;
     }
 
+    if (useDevSource) {
+        if (!writeSettings) {
+            throw new Error("guide-init: --dev cannot be combined with --no-settings");
+        }
+        if (packageSourceOverride !== null) {
+            throw new Error("guide-init: --dev cannot be combined with an explicit package source");
+        }
+    }
+
     return {
         writeSettings,
         packageSourceOverride,
+        useDevSource,
         showHelp,
     };
 }
@@ -924,12 +1004,14 @@ async function runGuideInit(ctx: ExtensionCommandContext, args: string | undefin
     const globalPackageAvailable = await isCurrentPackageAvailableGlobally();
     const shouldAutoSkipSettings =
         options.writeSettings &&
+        !options.useDevSource &&
         options.packageSourceOverride === null &&
         globalPackageAvailable &&
         !settingsPathExists;
     let writeSettings = options.writeSettings;
     let packageSource: string | null = null;
     let usedDefaultPackageSource = false;
+    let usedDevSource = false;
     let skippedSettingsReason: "request" | "global-package" | null = null;
 
     if (shouldAutoSkipSettings) {
@@ -943,6 +1025,24 @@ async function runGuideInit(ctx: ExtensionCommandContext, args: string | undefin
             }
         } else {
             skippedSettingsReason = "request";
+        }
+    }
+
+    if (writeSettings) {
+        try {
+            if (options.useDevSource) {
+                packageSource = await resolveGuideInitDevSource(ctx.cwd);
+                usedDevSource = true;
+            } else {
+                const manifest = await loadPackageManifest();
+                packageSource = options.packageSourceOverride ?? defaultPackageSource(manifest);
+                usedDefaultPackageSource = options.packageSourceOverride === null;
+            }
+        } catch (error) {
+            setGuidesWidget(ctx, buildGuideInitUsageLines(ctx.cwd));
+            const message = error instanceof Error ? error.message : String(error);
+            ctx.ui.notify(message, "warning");
+            return;
         }
     }
 
@@ -962,9 +1062,6 @@ async function runGuideInit(ctx: ExtensionCommandContext, args: string | undefin
     }
 
     if (writeSettings) {
-        const manifest = await loadPackageManifest();
-        packageSource = options.packageSourceOverride ?? defaultPackageSource(manifest);
-        usedDefaultPackageSource = options.packageSourceOverride === null;
         if (!settingsPathExists) {
             await writeSettingsConfig(settingsPath, packageSource);
             createdPaths.push(SETTINGS_CONFIG_RELATIVE_PATH);
@@ -982,6 +1079,7 @@ async function runGuideInit(ctx: ExtensionCommandContext, args: string | undefin
             writeSettings,
             packageSource,
             usedDefaultPackageSource,
+            usedDevSource,
             skippedSettingsReason,
         ),
     );
@@ -1033,13 +1131,15 @@ function buildGuideInitUsageLines(cwd: string): string[] {
     return [
         "pi guide init",
         `cwd: ${cwd}`,
-        "usage: /guide-init [package-source] [--no-settings]",
+        "usage: /guide-init [package-source] [--no-settings] [--dev]",
         "modes:",
         "- /guide-init --no-settings",
-        "- /guide-init git:git@github.com:sillypoise/pi-guides@v0.1.1",
-        "- /guide-init npm:@sillypoise/pi-guides@0.1.1",
+        "- /guide-init --dev",
+        "- /guide-init git:git@github.com:sillypoise/pi-guides@v0.1.2",
+        "- /guide-init npm:@sillypoise/pi-guides@0.1.2",
         "notes:",
         "- use --no-settings when the package is already available globally",
+        "- use --dev with PI_GUIDES_DEV_SOURCE or settings piGuidesDevSource",
         "- pass an explicit package source for reproducible repos",
     ];
 }
@@ -1051,6 +1151,7 @@ function buildGuideInitWidgetLines(
     writeSettings: boolean,
     packageSource: string | null,
     usedDefaultPackageSource: boolean,
+    usedDevSource: boolean,
     skippedSettingsReason: "request" | "global-package" | null,
 ): string[] {
     const lines = [
@@ -1059,7 +1160,11 @@ function buildGuideInitWidgetLines(
     ];
 
     if (writeSettings) {
-        lines.push("setup mode: repo-pinned package");
+        if (usedDevSource) {
+            lines.push("setup mode: local dev package path");
+        } else {
+            lines.push("setup mode: repo-pinned package");
+        }
         if (packageSource === null) {
             lines.push("settings source: unavailable");
         } else {
@@ -1069,6 +1174,9 @@ function buildGuideInitWidgetLines(
             lines.push(
                 "note: the default settings source uses the package git tag; pass an explicit source if this repo should pin something else.",
             );
+        }
+        if (usedDevSource) {
+            lines.push("note: local dev package paths are machine-specific; do not commit them to shared repos.");
         }
     } else {
         lines.push("setup mode: global package assumed");
@@ -1100,7 +1208,11 @@ function buildGuideInitWidgetLines(
     lines.push("next:");
     lines.push("- /guides");
     if (writeSettings) {
-        lines.push("- commit .pi/settings.json, .pi/guides.json, and AGENTS.md for reproducible repos");
+        if (usedDevSource) {
+            lines.push("- keep .pi/settings.json local unless every machine shares the same dev path");
+        } else {
+            lines.push("- commit .pi/settings.json, .pi/guides.json, and AGENTS.md for reproducible repos");
+        }
     } else {
         lines.push("- commit .pi/guides.json and AGENTS.md when the repo should keep guide activation");
     }

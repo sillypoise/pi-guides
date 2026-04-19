@@ -67,13 +67,13 @@ Use this when the repository should carry its own package pin.
 2. Run one of:
 
 ```text
-/guide-init git:git@github.com:sillypoise/pi-guides@v0.1.1
+/guide-init git:git@github.com:sillypoise/pi-guides@v0.1.2
 ```
 
 or later, once published to npm:
 
 ```text
-/guide-init npm:@sillypoise/pi-guides@0.1.1
+/guide-init npm:@sillypoise/pi-guides@0.1.2
 ```
 
 3. Inspect the active state:
@@ -104,6 +104,21 @@ This repository self-hosts its own package during development.
 
 Because `.pi/settings.json` is inside `.pi/`, the relative path `..` resolves to the repository root.
 That lets pi load this local package while working in this repository.
+
+To test unreleased package changes in another repo, use:
+
+```text
+/guide-init --dev
+```
+
+`--dev` resolves a local package path from one of:
+
+- `PI_GUIDES_DEV_SOURCE`
+- `.pi/settings.json` field `piGuidesDevSource`
+- `~/.pi/agent/settings.json` field `piGuidesDevSource`
+
+This is intended for personal testing only.
+The generated `.pi/settings.json` will contain a machine-specific local path.
 
 ---
 
@@ -235,7 +250,7 @@ Example global pi settings using a pinned git source:
 ```json
 {
   "packages": [
-    "git:git@github.com:sillypoise/pi-guides@v0.1.1"
+    "git:git@github.com:sillypoise/pi-guides@v0.1.2"
   ]
 }
 ```
@@ -245,7 +260,7 @@ Equivalent npm form once published:
 ```json
 {
   "packages": [
-    "npm:@sillypoise/pi-guides@0.1.1"
+    "npm:@sillypoise/pi-guides@0.1.2"
   ]
 }
 ```
@@ -262,7 +277,7 @@ Git example:
 ```json
 {
   "packages": [
-    "git:git@github.com:sillypoise/pi-guides@v0.1.1"
+    "git:git@github.com:sillypoise/pi-guides@v0.1.2"
   ]
 }
 ```
@@ -272,7 +287,7 @@ Npm example once published:
 ```json
 {
   "packages": [
-    "npm:@sillypoise/pi-guides@0.1.1"
+    "npm:@sillypoise/pi-guides@0.1.2"
   ]
 }
 ```
@@ -339,7 +354,7 @@ Example:
 ```json
 {
   "packages": [
-    "git:git@github.com:sillypoise/pi-guides@v0.1.1"
+    "git:git@github.com:sillypoise/pi-guides@v0.1.2"
   ]
 }
 ```
@@ -452,7 +467,7 @@ The widget includes:
 - resolved guide entries with source paths and summaries
 - available profile list
 
-### `/guide-init [package-source] [--no-settings]`
+### `/guide-init [package-source] [--no-settings] [--dev]`
 
 Scaffolds missing repo files from package templates.
 
@@ -468,12 +483,15 @@ Current v0.1 behavior:
 - if the package is already available globally, plain `/guide-init` skips `.pi/settings.json` automatically
 - otherwise, plain `/guide-init` writes `.pi/settings.json` using the package git tag by default
 - you can pass an explicit package source, for example:
-  - `/guide-init git:git@github.com:sillypoise/pi-guides@v0.1.1`
-  - `/guide-init npm:@sillypoise/pi-guides@0.1.1`
+  - `/guide-init git:git@github.com:sillypoise/pi-guides@v0.1.2`
+  - `/guide-init npm:@sillypoise/pi-guides@0.1.2`
+- you can use `--dev` to write a configured local package path for testing unreleased changes
+- `--dev` resolves from `PI_GUIDES_DEV_SOURCE` or settings field `piGuidesDevSource`
+- `--dev` cannot be combined with `--no-settings` or an explicit package source
 - you can skip `.pi/settings.json` generation with `--no-settings`
 - `-h` and `--help` show usage guidance in the widget
 - unknown options are rejected explicitly
-- the widget distinguishes global-package vs repo-pinned bootstrap mode
+- the widget distinguishes global-package, repo-pinned, and local-dev bootstrap modes
 - the widget includes next-step hints after scaffolding
 - it does not attempt complex AGENTS migrations yet
 

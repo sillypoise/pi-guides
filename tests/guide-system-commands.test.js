@@ -86,6 +86,26 @@ async function withTempHome(runCase) {
     }
 }
 
+async function withEnv(name, value, runCase) {
+    const originalValue = process.env[name];
+
+    if (value === null) {
+        delete process.env[name];
+    } else {
+        process.env[name] = value;
+    }
+
+    try {
+        await runCase();
+    } finally {
+        if (originalValue === undefined) {
+            delete process.env[name];
+        } else {
+            process.env[name] = originalValue;
+        }
+    }
+}
+
 function writeGuidesConfig(rootPath, config) {
     mkdirSync(join(rootPath, ".pi"), { recursive: true });
     writeFileSync(
@@ -130,7 +150,7 @@ test("guide-init --no-settings bootstraps repo-local files without project setti
 test("guide-init with explicit package source writes project settings and widget guidance", async () => {
     await withTempRoot(async (rootPath) => {
         const ctx = createCommandContext(rootPath);
-        const packageSource = "git:git@github.com:sillypoise/pi-guides@v0.1.1";
+        const packageSource = "git:git@github.com:sillypoise/pi-guides@v0.1.2";
 
         await guideInit.handler(packageSource, ctx);
 
@@ -186,9 +206,75 @@ test("guide-init writes the default git package source when settings are request
             assert.equal(ctx.reloadCount, 1);
             const settings = JSON.parse(readFileSync(join(rootPath, ".pi", "settings.json"), "utf8"));
             assert.deepEqual(settings, {
-                packages: ["git:git@github.com:sillypoise/pi-guides@v0.1.1"],
+                packages: ["git:git@github.com:sillypoise/pi-guides@v0.1.2"],
             });
         });
+    });
+});
+
+test("guide-init --dev writes a configured local package path", async () => {
+    await withTempRoot(async (rootPath) => {
+        const ctx = createCommandContext(rootPath);
+        const devSourcePath = resolve(rootPath, "..", "dev-pi-guides");
+
+        await withEnv("PI_GUIDES_DEV_SOURCE", devSourcePath, async () => {
+            await guideInit.handler("--dev", ctx);
+        });
+
+        assert.equal(ctx.reloadCount, 1);
+        const settings = JSON.parse(readFileSync(join(rootPath, ".pi", "settings.json"), "utf8"));
+        assert.deepEqual(settings, { packages: [devSourcePath] });
+
+        const widgetLines = ctx.widgets.at(-1)?.value;
+        assert.ok(Array.isArray(widgetLines));
+        assert.ok(widgetLines.includes("setup mode: local dev package path"));
+        assert.ok(widgetLines.includes(`settings source: ${devSourcePath}`));
+        assert.ok(
+            widgetLines.includes(
+                "note: local dev package paths are machine-specific; do not commit them to shared repos.",
+            ),
+        );
+    });
+});
+
+test("guide-init --dev fails cleanly without a configured dev source", async () => {
+    await withTempHome(async () => {
+        await withTempRoot(async (rootPath) => {
+            const ctx = createCommandContext(rootPath);
+
+            await withEnv("PI_GUIDES_DEV_SOURCE", null, async () => {
+                await guideInit.handler("--dev", ctx);
+            });
+
+            assert.equal(ctx.reloadCount, 0);
+            assert.equal(existsSync(join(rootPath, ".pi", "guides.json")), false);
+            assert.equal(existsSync(join(rootPath, "AGENTS.md")), false);
+            assert.equal(existsSync(join(rootPath, ".pi", "settings.json")), false);
+            assert.ok(
+                ctx.notifications.some((entry) => {
+                    return entry.message.includes(
+                        "--dev requires PI_GUIDES_DEV_SOURCE or settings piGuidesDevSource",
+                    );
+                }),
+            );
+        });
+    });
+});
+
+test("guide-init rejects conflicting --dev and explicit source arguments", async () => {
+    await withTempRoot(async (rootPath) => {
+        const ctx = createCommandContext(rootPath);
+
+        await guideInit.handler("--dev git:git@github.com:sillypoise/pi-guides@v0.1.2", ctx);
+
+        assert.equal(ctx.reloadCount, 0);
+        assert.ok(
+            ctx.notifications.some((entry) => {
+                return entry.message.includes(
+                    "--dev cannot be combined with an explicit package source",
+                );
+            }),
+        );
     });
 });
 
@@ -203,7 +289,7 @@ test("guide-init rejects unknown options and shows usage widget", async () => {
 
         const widgetLines = ctx.widgets.at(-1)?.value;
         assert.ok(Array.isArray(widgetLines));
-        assert.ok(widgetLines.includes("usage: /guide-init [package-source] [--no-settings]"));
+        assert.ok(widgetLines.includes("usage: /guide-init [package-source] [--no-settings] [--dev]"));
     });
 });
 
