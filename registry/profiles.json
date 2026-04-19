@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "profiles": {
+    "core": {
+      "title": "Core",
+      "description": "Base TigerStyle-only profile using the language-agnostic rulebook.",
+      "guides": ["tigerstyle"]
+    }
+  }
+}

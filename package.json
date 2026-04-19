@@ -1,0 +1,31 @@
+{
+  "name": "@sillypoise/pi-guides",
+  "version": "0.1.0",
+  "description": "Pi-native guide activation system with a registry-driven extension, templates, and base TigerStyle guides.",
+  "type": "module",
+  "private": false,
+  "keywords": ["pi-package"],
+  "files": [
+    "extensions",
+    "files",
+    "registry",
+    "templates",
+    "schemas",
+    "prompts",
+    "bin",
+    "README.md"
+  ],
+  "pi": {
+    "extensions": ["./extensions/guide-system.ts"],
+    "prompts": ["./prompts/*.md"]
+  },
+  "bin": {
+    "validate-pi-guides": "./bin/validate-pi-guides"
+  },
+  "scripts": {
+    "validate": "./bin/validate-pi-guides"
+  },
+  "peerDependencies": {
+    "@mariozechner/pi-coding-agent": "*"
+  }
+}

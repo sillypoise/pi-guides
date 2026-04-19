@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sillypoise.dev/pi-guides/schemas/guides.schema.json",
+  "title": "Pi Guides Repository Config",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "version": {
+      "type": "integer",
+      "const": 1
+    },
+    "profile": {
+      "type": "string",
+      "minLength": 1
+    },
+    "guides": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true
+    },
+    "mode": {
+      "type": "string",
+      "enum": ["compact", "full"]
+    },
+    "additions": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true
+    },
+    "removals": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true
+    },
+    "variants": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  },
+  "required": ["version"],
+  "allOf": [
+    {
+      "anyOf": [
+        { "required": ["profile"] },
+        { "required": ["guides"] }
+      ]
+    },
+    {
+      "not": {
+        "required": ["profile", "guides"]
+      }
+    }
+  ]
+}

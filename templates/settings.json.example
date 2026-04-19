@@ -1,0 +1,5 @@
+{
+  "packages": [
+    "npm:@sillypoise/pi-guides@0.1.0"
+  ]
+}

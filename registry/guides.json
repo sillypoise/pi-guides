@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "precedence": [
+    { "id": "rulebook", "rank": 1 },
+    { "id": "heuristics", "rank": 2 },
+    { "id": "playbook", "rank": 3 },
+    { "id": "framework", "rank": 4 }
+  ],
+  "guides": {
+    "tigerstyle": {
+      "title": "TigerStyle",
+      "archetype": "rulebook",
+      "precedence": "rulebook",
+      "summary": "Base language-agnostic TigerStyle rulebook.",
+      "tags": ["core", "language-agnostic", "tigerstyle"],
+      "defaults": {
+        "compact": "strict-compact",
+        "full": "strict-full"
+      },
+      "variants": {
+        "strict-compact": {
+          "path": "files/tigerstyle-strict-compact.md",
+          "size": "compact",
+          "strictness": "strict"
+        },
+        "strict-full": {
+          "path": "files/tigerstyle-strict-full.md",
+          "size": "full",
+          "strictness": "strict"
+        }
+      },
+      "skill": null
+    }
+  }
+}

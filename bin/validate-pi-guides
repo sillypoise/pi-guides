@@ -1,0 +1,101 @@
+#!/usr/bin/env node
+
+import { readFileSync, existsSync } from "node:fs";
+import { resolve } from "node:path";
+import process from "node:process";
+
+const root = process.cwd();
+const errors = [];
+
+function readJson(path) {
+  try {
+    return JSON.parse(readFileSync(path, "utf8"));
+  } catch (error) {
+    errors.push(`${path}: ${error instanceof Error ? error.message : String(error)}`);
+    return null;
+  }
+}
+
+function assert(condition, message) {
+  if (!condition) {
+    errors.push(message);
+  }
+}
+
+const packageJsonPath = resolve(root, "package.json");
+const guidesPath = resolve(root, "registry", "guides.json");
+const profilesPath = resolve(root, "registry", "profiles.json");
+const templatePath = resolve(root, "templates", "repo-AGENTS.md");
+const extensionPath = resolve(root, "extensions", "guide-system.ts");
+const promptPath = resolve(root, "prompts", "guide-review.md");
+
+assert(existsSync(packageJsonPath), "Missing package.json");
+assert(existsSync(guidesPath), "Missing registry/guides.json");
+assert(existsSync(profilesPath), "Missing registry/profiles.json");
+assert(existsSync(templatePath), "Missing templates/repo-AGENTS.md");
+assert(existsSync(extensionPath), "Missing extensions/guide-system.ts");
+assert(existsSync(promptPath), "Missing prompts/guide-review.md");
+
+const packageJson = existsSync(packageJsonPath) ? readJson(packageJsonPath) : null;
+const guides = existsSync(guidesPath) ? readJson(guidesPath) : null;
+const profiles = existsSync(profilesPath) ? readJson(profilesPath) : null;
+
+if (packageJson) {
+  assert(Array.isArray(packageJson.keywords) && packageJson.keywords.includes("pi-package"), "package.json must include keyword 'pi-package'");
+  assert(packageJson.pi?.extensions?.includes("./extensions/guide-system.ts"), "package.json pi.extensions must include ./extensions/guide-system.ts");
+}
+
+if (guides) {
+  assert(guides.version === 1, "registry/guides.json must declare version 1");
+  assert(Array.isArray(guides.precedence) && guides.precedence.length > 0, "registry/guides.json must define precedence tiers");
+  assert(guides.guides && typeof guides.guides === "object", "registry/guides.json must define guides");
+
+  for (const [guideId, guide] of Object.entries(guides.guides ?? {})) {
+    assert(typeof guide.title === "string" && guide.title.length > 0, `Guide '${guideId}' must define title`);
+    assert(typeof guide.defaults?.compact === "string", `Guide '${guideId}' must define defaults.compact`);
+    assert(typeof guide.defaults?.full === "string", `Guide '${guideId}' must define defaults.full`);
+
+    for (const [variantId, variant] of Object.entries(guide.variants ?? {})) {
+      const variantPath = resolve(root, variant.path);
+      assert(existsSync(variantPath), `Guide '${guideId}' variant '${variantId}' points to missing file '${variant.path}'`);
+      assert(variant.size === "compact" || variant.size === "full", `Guide '${guideId}' variant '${variantId}' has invalid size`);
+    }
+
+    if (guide.defaults?.compact) {
+      assert(Boolean(guide.variants?.[guide.defaults.compact]), `Guide '${guideId}' defaults.compact must reference an existing variant`);
+    }
+    if (guide.defaults?.full) {
+      assert(Boolean(guide.variants?.[guide.defaults.full]), `Guide '${guideId}' defaults.full must reference an existing variant`);
+    }
+  }
+}
+
+if (profiles && guides) {
+  assert(profiles.version === 1, "registry/profiles.json must declare version 1");
+  assert(profiles.profiles && typeof profiles.profiles === "object", "registry/profiles.json must define profiles");
+
+  for (const [profileId, profile] of Object.entries(profiles.profiles ?? {})) {
+    assert(Array.isArray(profile.guides) && profile.guides.length > 0, `Profile '${profileId}' must define at least one guide`);
+    for (const guideId of profile.guides ?? []) {
+      assert(Boolean(guides.guides?.[guideId]), `Profile '${profileId}' references unknown guide '${guideId}'`);
+    }
+  }
+}
+
+if (existsSync(templatePath)) {
+  const template = readFileSync(templatePath, "utf8");
+  const beginCount = template.split("<!-- BEGIN MANAGED GUIDE HEADER -->").length - 1;
+  const endCount = template.split("<!-- END MANAGED GUIDE HEADER -->").length - 1;
+  assert(beginCount === 1, "templates/repo-AGENTS.md must contain exactly one BEGIN MANAGED GUIDE HEADER marker");
+  assert(endCount === 1, "templates/repo-AGENTS.md must contain exactly one END MANAGED GUIDE HEADER marker");
+}
+
+if (errors.length > 0) {
+  console.error("pi-guides validation failed:\n");
+  for (const error of errors) {
+    console.error(`- ${error}`);
+  }
+  process.exit(1);
+}
+
+console.log("pi-guides validation passed");
