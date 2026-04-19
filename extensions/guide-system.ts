@@ -108,12 +108,24 @@ type LoadedGuideConfig = {
     config: GuideConfig;
 };
 
+type PackageManifest = {
+    name: string;
+    version: string;
+};
+
+type GuideInitOptions = {
+    writeSettings: boolean;
+    packageSourceOverride: string | null;
+};
+
 const PACKAGE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const REGISTRY_PATH = resolve(PACKAGE_ROOT, "registry", "guides.json");
 const PROFILES_PATH = resolve(PACKAGE_ROOT, "registry", "profiles.json");
+const PACKAGE_MANIFEST_PATH = resolve(PACKAGE_ROOT, "package.json");
 const TEMPLATE_GUIDES_PATH = resolve(PACKAGE_ROOT, "templates", "guides.json.example");
 const TEMPLATE_AGENTS_PATH = resolve(PACKAGE_ROOT, "templates", "repo-AGENTS.md");
 const GUIDE_CONFIG_RELATIVE_PATH = join(".pi", "guides.json");
+const SETTINGS_CONFIG_RELATIVE_PATH = join(".pi", "settings.json");
 const GUIDE_STATUS_KEY = "pi-guides:status";
 const GUIDE_WIDGET_KEY = "pi-guides:widget";
 const GUIDE_MODE_COMPACT: GuideMode = "compact";
@@ -123,6 +135,7 @@ const END_HEADER = "<!-- END MANAGED GUIDE HEADER -->";
 
 let registryCache: GuideRegistry | null = null;
 let profilesCache: ProfileRegistry | null = null;
+let packageManifestCache: PackageManifest | null = null;
 
 async function readJsonFile<T>(path: string): Promise<T> {
     const raw = await readFile(path, "utf8");
@@ -222,6 +235,24 @@ async function writeGuideConfig(configPath: string, config: GuideConfig): Promis
     await writeFile(configPath, content, "utf8");
 }
 
+function settingsConfigPath(cwd: string): string {
+    return resolve(cwd, SETTINGS_CONFIG_RELATIVE_PATH);
+}
+
+function defaultPackageSource(manifest: PackageManifest): string {
+    return `npm:${manifest.name}@${manifest.version}`;
+}
+
+function settingsTemplateContent(packageSource: string): string {
+    return `${JSON.stringify({ packages: [packageSource] }, null, 2)}\n`;
+}
+
+async function writeSettingsConfig(settingsPath: string, packageSource: string): Promise<void> {
+    const content = settingsTemplateContent(packageSource);
+    await ensureParentDir(settingsPath);
+    await writeFile(settingsPath, content, "utf8");
+}
+
 async function loadRegistry(): Promise<GuideRegistry> {
     if (registryCache === null) {
         registryCache = await readJsonFile<GuideRegistry>(REGISTRY_PATH);
@@ -234,6 +265,13 @@ async function loadProfiles(): Promise<ProfileRegistry> {
         profilesCache = await readJsonFile<ProfileRegistry>(PROFILES_PATH);
     }
     return profilesCache;
+}
+
+async function loadPackageManifest(): Promise<PackageManifest> {
+    if (packageManifestCache === null) {
+        packageManifestCache = await readJsonFile<PackageManifest>(PACKAGE_MANIFEST_PATH);
+    }
+    return packageManifestCache;
 }
 
 function dedupe(values: string[]): string[] {
@@ -258,6 +296,25 @@ function splitArgs(args: string | undefined): string[] {
         return [];
     }
     return trimmedArgs.split(/\s+/u);
+}
+
+function parseGuideInitOptions(args: string | undefined): GuideInitOptions {
+    const parts = splitArgs(args);
+    let writeSettings = true;
+    let packageSourceOverride: string | null = null;
+
+    for (const part of parts) {
+        if (part === "--no-settings") {
+            writeSettings = false;
+            continue;
+        }
+        packageSourceOverride = part;
+    }
+
+    return {
+        writeSettings,
+        packageSourceOverride,
+    };
 }
 
 function fallbackVariantOrder(mode: GuideMode): string[] {
@@ -736,23 +793,44 @@ async function syncAgentsFile(cwd: string): Promise<SyncAgentsResult> {
     return "updated";
 }
 
-async function runGuideInit(ctx: ExtensionCommandContext): Promise<void> {
-    const configPath = resolve(ctx.cwd, GUIDE_CONFIG_RELATIVE_PATH);
+async function runGuideInit(ctx: ExtensionCommandContext, args: string | undefined): Promise<void> {
+    const options = parseGuideInitOptions(args);
+    const configPath = guideConfigPath(ctx.cwd);
+    const settingsPath = settingsConfigPath(ctx.cwd);
     const agentsPath = resolve(ctx.cwd, "AGENTS.md");
-    let created = 0;
+    const createdPaths: string[] = [];
+    const skippedPaths: string[] = [];
+    let packageSource: string | null = null;
 
     if (!(await fileExists(configPath))) {
         await ensureParentDir(configPath);
         await writeFile(configPath, await readFile(TEMPLATE_GUIDES_PATH, "utf8"), "utf8");
-        created += 1;
+        createdPaths.push(GUIDE_CONFIG_RELATIVE_PATH);
+    } else {
+        skippedPaths.push(GUIDE_CONFIG_RELATIVE_PATH);
     }
 
     if (!(await fileExists(agentsPath))) {
         await writeFile(agentsPath, await readFile(TEMPLATE_AGENTS_PATH, "utf8"), "utf8");
-        created += 1;
+        createdPaths.push("AGENTS.md");
+    } else {
+        skippedPaths.push("AGENTS.md");
     }
 
-    if (created === 0) {
+    if (options.writeSettings) {
+        const manifest = await loadPackageManifest();
+        packageSource = options.packageSourceOverride ?? defaultPackageSource(manifest);
+        if (!(await fileExists(settingsPath))) {
+            await writeSettingsConfig(settingsPath, packageSource);
+            createdPaths.push(SETTINGS_CONFIG_RELATIVE_PATH);
+        } else {
+            skippedPaths.push(SETTINGS_CONFIG_RELATIVE_PATH);
+        }
+    }
+
+    setGuidesWidget(ctx, buildGuideInitWidgetLines(ctx.cwd, createdPaths, skippedPaths, packageSource));
+
+    if (createdPaths.length === 0) {
         ctx.ui.notify("guide-init: nothing created; files already exist", "info");
         return;
     }
@@ -763,6 +841,7 @@ async function runGuideInit(ctx: ExtensionCommandContext): Promise<void> {
 
 async function runGuideSync(ctx: ExtensionCommandContext): Promise<void> {
     const result = await syncAgentsFile(ctx.cwd);
+    setGuidesWidget(ctx, buildGuideSyncWidgetLines(ctx.cwd, result));
     if (result === "skipped") {
         ctx.ui.notify(
             "guide-sync: AGENTS.md exists but does not contain the managed header block",
@@ -792,6 +871,53 @@ function notifyGuidesState(ctx: ExtensionContext, state: ResolvedState): void {
 
 function setGuidesWidget(ctx: ExtensionContext, lines: string[]): void {
     ctx.ui.setWidget(GUIDE_WIDGET_KEY, lines);
+}
+
+function buildGuideInitWidgetLines(
+    cwd: string,
+    createdPaths: string[],
+    skippedPaths: string[],
+    packageSource: string | null,
+): string[] {
+    const lines = [
+        "pi guide init",
+        `cwd: ${cwd}`,
+    ];
+
+    if (packageSource === null) {
+        lines.push("settings: skipped by request");
+    } else {
+        lines.push(`settings source: ${packageSource}`);
+    }
+
+    lines.push("created:");
+    if (createdPaths.length === 0) {
+        lines.push("- none");
+    } else {
+        for (const path of createdPaths) {
+            lines.push(`- ${path}`);
+        }
+    }
+
+    lines.push("skipped existing:");
+    if (skippedPaths.length === 0) {
+        lines.push("- none");
+    } else {
+        for (const path of skippedPaths) {
+            lines.push(`- ${path}`);
+        }
+    }
+
+    return lines;
+}
+
+function buildGuideSyncWidgetLines(cwd: string, result: SyncAgentsResult): string[] {
+    return [
+        "pi guide sync",
+        `cwd: ${cwd}`,
+        `result: ${result}`,
+        "target: AGENTS.md",
+    ];
 }
 
 async function showGuidesWidget(ctx: ExtensionContext, state: ResolvedState): Promise<void> {
@@ -914,9 +1040,9 @@ export default function guideSystemExtension(pi: ExtensionAPI) {
     });
 
     pi.registerCommand("guide-init", {
-        description: "Initialize .pi/guides.json and repo AGENTS.md from package templates",
-        handler: async (_args, ctx) => {
-            await runGuideInit(ctx);
+        description: "Initialize .pi/guides.json, .pi/settings.json, and repo AGENTS.md from package templates",
+        handler: async (args, ctx) => {
+            await runGuideInit(ctx, args);
         },
     });
 

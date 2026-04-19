@@ -13,7 +13,8 @@ Current v0.1 scope:
 - repo-local prose/context in `AGENTS.md`
 - profile registry in `registry/profiles.json`
 - guide registry in `registry/guides.json`
-- bootstrap/sync templates for consumer repos
+- bootstrap and sync commands for consumer repos
+- persistent profile and mode switching
 - only the base, language-agnostic TigerStyle variants
   - `files/tigerstyle-strict-compact.md`
   - `files/tigerstyle-strict-full.md`
@@ -21,11 +22,68 @@ Current v0.1 scope:
 Not included yet:
 
 - language-specific TigerStyle variants
-- framework/library guides
+- framework or library guides
 - skills for optional deep guide families
 - session-scoped overrides
 - custom compaction behavior
 - hosted JSON schema URLs
+
+---
+
+## Quick Start
+
+### Consumer repo quick start
+
+1. Install this package for the repo:
+
+```json
+{
+  "packages": [
+    "npm:@sillypoise/pi-guides@0.1.0"
+  ]
+}
+```
+
+Put that in `.pi/settings.json`, or use `pi install -l npm:@sillypoise/pi-guides@0.1.0`.
+
+2. Start pi in the repository.
+
+3. Run:
+
+```text
+/guide-init
+```
+
+This creates any missing bootstrap files:
+
+- `.pi/guides.json`
+- `.pi/settings.json` when missing
+- `AGENTS.md`
+
+4. Inspect the active guide state:
+
+```text
+/guides
+```
+
+5. Work normally.
+
+Once the extension is loaded and `.pi/guides.json` is valid, the active guides are injected on each normal agent turn automatically.
+
+### Local development in this repo
+
+This repository self-hosts its own package during development.
+
+`.pi/settings.json` contains:
+
+```json
+{
+  "packages": [".."]
+}
+```
+
+Because `.pi/settings.json` is inside `.pi/`, the relative path `..` resolves to the repository root.
+That lets pi load this local package while working in this repository.
 
 ---
 
@@ -54,7 +112,7 @@ It defines:
 
 - active profile or direct guide list
 - preferred mode (`compact` or `full`)
-- explicit additions/removals
+- explicit additions and removals
 - explicit variant overrides
 
 ### 2. Repo-local prose/context: `AGENTS.md`
@@ -142,7 +200,7 @@ bin/
 
 ### Global install
 
-Example:
+Example global pi settings:
 
 ```json
 {
@@ -152,7 +210,11 @@ Example:
 }
 ```
 
-You can place that in `~/.pi/agent/settings.json`, or install through `pi install`.
+You can place that in `~/.pi/agent/settings.json`, or install through:
+
+```bash
+pi install npm:@sillypoise/pi-guides@0.1.0
+```
 
 ### Project-local install
 
@@ -166,30 +228,47 @@ In a repo consuming this package:
 }
 ```
 
-Place that in `.pi/settings.json`.
+Place that in `.pi/settings.json`, or install through:
 
-### Local development in this repo
+```bash
+pi install -l npm:@sillypoise/pi-guides@0.1.0
+```
 
-This repository self-hosts its own package during development.
+### Local path install
 
-`.pi/settings.json` contains:
+For local testing:
 
 ```json
 {
-  "packages": [".."]
+  "packages": [
+    "../path/to/pi-guides"
+  ]
 }
 ```
 
-Because `.pi/settings.json` is inside `.pi/`, the relative path `..` resolves to the repository root.
-That lets pi load this local package while working in this repository.
+This is most useful while iterating on the package itself.
 
 ---
 
-## Repo activation contract
+## Consumer repo setup walkthrough
 
-A consuming repository should normally have:
+A consuming repository should normally have three pieces:
 
-### `.pi/guides.json`
+### 1. `.pi/settings.json`
+
+Example:
+
+```json
+{
+  "packages": [
+    "npm:@sillypoise/pi-guides@0.1.0"
+  ]
+}
+```
+
+This tells pi to load the package resources, including the extension.
+
+### 2. `.pi/guides.json`
 
 Minimal example:
 
@@ -204,7 +283,9 @@ Minimal example:
 }
 ```
 
-### `AGENTS.md`
+This is the canonical machine-readable guide selection file.
+
+### 3. `AGENTS.md`
 
 Generated from `templates/repo-AGENTS.md` or created manually following the same contract.
 
@@ -212,6 +293,68 @@ Important rule:
 
 - `.pi/guides.json` = machine-readable guide selection
 - `AGENTS.md` = human-readable repo context
+
+---
+
+## How activation actually works
+
+This is the most important mental model for using the system.
+
+### Step 1. Pi loads the package
+
+If the package is listed in `.pi/settings.json`, pi loads the package resources declared in this repo's `package.json`.
+
+That includes the extension in:
+
+- `extensions/guide-system.ts`
+
+### Step 2. The extension auto-loads
+
+You do **not** enable the extension separately.
+
+If the package is loaded and the extension is declared in `package.json`, the extension is active automatically.
+
+### Step 3. The extension resolves repo guide config
+
+On each normal agent turn, the extension:
+
+1. reads `.pi/guides.json`
+2. expands either:
+   - `profile`, or
+   - direct `guides`
+3. applies `additions`
+4. applies `removals`
+5. resolves each guide to a concrete variant
+6. orders guides by registry precedence
+7. appends the active guide content to the effective system prompt in `before_agent_start`
+
+### Step 4. The model sees the active guides
+
+After that, normal prompts should behave as though the active guides are in force for that turn.
+
+Examples:
+
+- “review this file”
+- “refactor this function”
+- “rewrite this validator”
+
+Those should use the active guide set automatically.
+
+### Important nuance
+
+**Extension loaded** is not exactly the same thing as **guides active**.
+
+The correct mental model is:
+
+- extension loaded = the guide system machinery is available
+- guides active = the extension successfully resolved `.pi/guides.json` and injected guides for the current agent turn
+
+So if:
+
+- `/guides` shows a valid active state, and
+- your next message is a normal agent prompt,
+
+then the guides should be active for that prompt.
 
 ---
 
@@ -231,18 +374,26 @@ The widget includes:
 - resolved guide entries with source paths and summaries
 - available profile list
 
-### `/guide-init`
+### `/guide-init [package-source] [--no-settings]`
 
-Scaffolds missing repo files from package templates:
+Scaffolds missing repo files from package templates.
+
+By default, it creates any missing:
 
 - `.pi/guides.json`
+- `.pi/settings.json`
 - `AGENTS.md`
 
-This command is conservative:
+Current v0.1 behavior:
 
 - it does not overwrite existing files
+- it can write `.pi/settings.json` using the current package npm source by default
+- you can pass an explicit package source, for example:
+  - `/guide-init npm:@sillypoise/pi-guides@0.1.0`
+  - `/guide-init git:github.com/sillypoise/pi-guides@v0.1.0`
+- you can skip `.pi/settings.json` generation with `--no-settings`
 - it does not attempt complex AGENTS migrations yet
-- it does not write `.pi/settings.json` for consumer repos because the package source may differ between local, npm, and git installs
+- it renders a widget summarizing created vs skipped files
 
 ### `/guide-sync`
 
@@ -254,6 +405,7 @@ It will:
 - update the managed header block if the markers are present exactly once
 - report `unchanged` when the managed header already matches the package template
 - refuse risky rewrites if the marker contract is missing or malformed
+- render a widget summarizing the result
 
 ### `/guide-profile <profile-id>`
 
@@ -265,6 +417,7 @@ Current v0.1 behavior:
 - if the repo currently uses direct `guides`, the command switches to profile-based config
 - direct-guide-only fields are dropped during that transition
 - invalid profile ids are rejected explicitly
+- calling without arguments shows available profiles
 
 ### `/guide-mode <compact|full>`
 
@@ -291,7 +444,7 @@ Each guide entry defines:
 - title
 - precedence tier
 - summary
-- defaults for compact/full resolution
+- defaults for compact and full resolution
 - available variants and their file paths
 
 Current v0.1 registry contains only one guide family:
@@ -352,6 +505,15 @@ If `mode` is `full`, resolution prefers:
 
 Explicit `variants.<guide-id>` overrides take precedence over the mode default.
 
+### Direct guides vs profile mode
+
+If `.pi/guides.json` uses direct `guides`, v0.1 rejects non-empty:
+
+- `additions`
+- `removals`
+
+That ambiguity is rejected explicitly instead of being silently ignored.
+
 ---
 
 ## Validation
@@ -362,7 +524,7 @@ Run:
 ./bin/validate-pi-guides
 ```
 
-Current validation checks:
+Current validation checks include:
 
 - `package.json` has pi-package metadata and extension registration
 - registry files are valid JSON objects using `version: 1`
@@ -371,7 +533,101 @@ Current validation checks:
 - guide variant paths exist
 - profile guide references are valid
 - template managed header markers exist exactly once and in the correct order
+- local dogfood `.pi/guides.json` is valid
+- local dogfood `.pi/settings.json` is valid
 - key runtime files exist
+
+The repository also includes extension command dogfood checks and validator regression checks:
+
+```bash
+node --test
+```
+
+---
+
+## Troubleshooting and FAQ
+
+### I can see `/guides`, but are guides automatically active for prompts?
+
+If `/guides` exists, the extension is loaded.
+
+Guides are active for a normal agent prompt when:
+
+- the extension is loaded,
+- `.pi/guides.json` exists and is valid,
+- guide resolution succeeds for the current repo,
+- and the prompt starts a normal agent turn.
+
+### Why does `/guides` show `guides: off`?
+
+Usually because `.pi/guides.json` does not exist in the current repo.
+
+Run:
+
+```text
+/guide-init
+```
+
+or create `.pi/guides.json` manually.
+
+### Why does `/guides` show `guides: error`?
+
+Usually because:
+
+- `.pi/guides.json` is invalid,
+- the referenced profile does not exist,
+- a variant override does not exist,
+- a guide file is missing,
+- or the config file is inaccessible.
+
+Use `/guides` and inspect the reported reason.
+
+### Do I have to enable the extension separately?
+
+No.
+
+If the package is loaded through `.pi/settings.json` and the package manifest exposes the extension, pi auto-loads it.
+
+### Why would I use `/guide-init` if the package is already loaded?
+
+Because package loading and repo bootstrap are separate concerns.
+
+The package may be available globally, while the repo still lacks:
+
+- `.pi/guides.json`
+- `.pi/settings.json`
+- `AGENTS.md`
+
+`/guide-init` scaffolds those repo-local files conservatively.
+
+### Does `/guide-profile` create session-only state?
+
+No.
+
+Current v0.1 behavior is persistent repo-local config.
+It writes `.pi/guides.json` and reloads the runtime.
+
+Session-scoped overrides are intentionally deferred.
+
+---
+
+## Distribution and ansible expectations
+
+This repository is intended to become the installable pi package source for a broader tooling setup.
+
+The expected distribution model is:
+
+1. this repo publishes the pi package
+2. ansible installs the package globally, or ensures it is available
+3. consumer repos declare the package in `.pi/settings.json` when they want repo-local reproducibility
+
+Recommended split of responsibility:
+
+- ansible handles package availability and environment setup
+- consumer repos handle `.pi/guides.json` and `AGENTS.md`
+- the extension handles runtime guide activation
+
+That keeps installation, repo configuration, and runtime behavior cleanly separated.
 
 ---
 
@@ -380,7 +636,7 @@ Current validation checks:
 This package is being built incrementally.
 
 For the initial pi-native port, only the language-agnostic TigerStyle base has been brought over.
-That keeps the contract smaller while the extension, repo activation model, and documentation stabilize.
+That keeps the contract smaller while the extension, repo activation model, bootstrap flow, and documentation stabilize.
 
 Language-specific TigerStyle variants and broader guide families can be added later without changing the core architecture:
 
@@ -392,12 +648,6 @@ Language-specific TigerStyle variants and broader guide families can be added la
 ---
 
 ## Development notes
-
-The repository also includes validator regression tests:
-
-```bash
-node --test
-```
 
 When changing any of the following, update the docs and rerun validation:
 
