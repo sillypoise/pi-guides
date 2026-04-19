@@ -9,7 +9,7 @@ import {
     writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import guideSystemExtension from "../extensions/guide-system.ts";
 
 function createPiHarness() {
@@ -69,6 +69,23 @@ async function withTempRoot(runCase) {
     }
 }
 
+async function withTempHome(runCase) {
+    const originalHome = process.env.HOME;
+    const homePath = mkdtempSync(join(tmpdir(), "pi-guides-home-"));
+
+    process.env.HOME = homePath;
+    try {
+        await runCase(homePath);
+    } finally {
+        if (originalHome === undefined) {
+            delete process.env.HOME;
+        } else {
+            process.env.HOME = originalHome;
+        }
+        rmSync(homePath, { recursive: true, force: true });
+    }
+}
+
 function writeGuidesConfig(rootPath, config) {
     mkdirSync(join(rootPath, ".pi"), { recursive: true });
     writeFileSync(
@@ -113,7 +130,7 @@ test("guide-init --no-settings bootstraps repo-local files without project setti
 test("guide-init with explicit package source writes project settings and widget guidance", async () => {
     await withTempRoot(async (rootPath) => {
         const ctx = createCommandContext(rootPath);
-        const packageSource = "git:github.com/sillypoise/pi-guides@v0.1.0";
+        const packageSource = "git:git@github.com:sillypoise/pi-guides@v0.1.1";
 
         await guideInit.handler(packageSource, ctx);
 
@@ -126,6 +143,52 @@ test("guide-init with explicit package source writes project settings and widget
         assert.ok(widgetLines.includes("setup mode: repo-pinned package"));
         assert.ok(widgetLines.includes(`settings source: ${packageSource}`));
         assert.ok(widgetLines.includes("next:"));
+    });
+});
+
+test("guide-init auto-skips project settings when the package is already global", async () => {
+    await withTempHome(async (homePath) => {
+        const globalSettingsPath = resolve(homePath, ".pi", "agent", "settings.json");
+        mkdirSync(resolve(homePath, ".pi", "agent"), { recursive: true });
+        writeFileSync(
+            globalSettingsPath,
+            `${JSON.stringify({ packages: [resolve(".")] }, null, 2)}\n`,
+            "utf8",
+        );
+
+        await withTempRoot(async (rootPath) => {
+            const ctx = createCommandContext(rootPath);
+
+            await guideInit.handler("", ctx);
+
+            assert.equal(ctx.reloadCount, 1);
+            assert.equal(existsSync(join(rootPath, ".pi", "settings.json")), false);
+
+            const widgetLines = ctx.widgets.at(-1)?.value;
+            assert.ok(Array.isArray(widgetLines));
+            assert.ok(widgetLines.includes("setup mode: global package assumed"));
+            assert.ok(
+                widgetLines.includes(
+                    "settings: skipped because the package is already available globally",
+                ),
+            );
+        });
+    });
+});
+
+test("guide-init writes the default git package source when settings are requested", async () => {
+    await withTempHome(async () => {
+        await withTempRoot(async (rootPath) => {
+            const ctx = createCommandContext(rootPath);
+
+            await guideInit.handler("", ctx);
+
+            assert.equal(ctx.reloadCount, 1);
+            const settings = JSON.parse(readFileSync(join(rootPath, ".pi", "settings.json"), "utf8"));
+            assert.deepEqual(settings, {
+                packages: ["git:git@github.com:sillypoise/pi-guides@v0.1.1"],
+            });
+        });
     });
 });
 

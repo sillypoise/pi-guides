@@ -67,13 +67,13 @@ Use this when the repository should carry its own package pin.
 2. Run one of:
 
 ```text
-/guide-init git:github.com/sillypoise/pi-guides@v0.1.0
+/guide-init git:git@github.com:sillypoise/pi-guides@v0.1.1
 ```
 
-or:
+or later, once published to npm:
 
 ```text
-/guide-init npm:@sillypoise/pi-guides@0.1.0
+/guide-init npm:@sillypoise/pi-guides@0.1.1
 ```
 
 3. Inspect the active state:
@@ -235,7 +235,7 @@ Example global pi settings using a pinned git source:
 ```json
 {
   "packages": [
-    "git:github.com/sillypoise/pi-guides@v0.1.0"
+    "git:git@github.com:sillypoise/pi-guides@v0.1.1"
   ]
 }
 ```
@@ -245,7 +245,7 @@ Equivalent npm form once published:
 ```json
 {
   "packages": [
-    "npm:@sillypoise/pi-guides@0.1.0"
+    "npm:@sillypoise/pi-guides@0.1.1"
   ]
 }
 ```
@@ -262,7 +262,7 @@ Git example:
 ```json
 {
   "packages": [
-    "git:github.com/sillypoise/pi-guides@v0.1.0"
+    "git:git@github.com:sillypoise/pi-guides@v0.1.1"
   ]
 }
 ```
@@ -272,7 +272,7 @@ Npm example once published:
 ```json
 {
   "packages": [
-    "npm:@sillypoise/pi-guides@0.1.0"
+    "npm:@sillypoise/pi-guides@0.1.1"
   ]
 }
 ```
@@ -339,7 +339,7 @@ Example:
 ```json
 {
   "packages": [
-    "npm:@sillypoise/pi-guides@0.1.0"
+    "git:git@github.com:sillypoise/pi-guides@v0.1.1"
   ]
 }
 ```
@@ -465,10 +465,11 @@ By default, it creates any missing:
 Current v0.1 behavior:
 
 - it does not overwrite existing files
-- it can write `.pi/settings.json` using the current package npm source by default
+- if the package is already available globally, plain `/guide-init` skips `.pi/settings.json` automatically
+- otherwise, plain `/guide-init` writes `.pi/settings.json` using the package git tag by default
 - you can pass an explicit package source, for example:
-  - `/guide-init npm:@sillypoise/pi-guides@0.1.0`
-  - `/guide-init git:github.com/sillypoise/pi-guides@v0.1.0`
+  - `/guide-init git:git@github.com:sillypoise/pi-guides@v0.1.1`
+  - `/guide-init npm:@sillypoise/pi-guides@0.1.1`
 - you can skip `.pi/settings.json` generation with `--no-settings`
 - `-h` and `--help` show usage guidance in the widget
 - unknown options are rejected explicitly

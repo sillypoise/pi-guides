@@ -1,5 +1,6 @@
+import { homedir } from "node:os";
 import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
-import { dirname, join, resolve } from "node:path";
+import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type {
     ExtensionAPI,
@@ -111,6 +112,14 @@ type LoadedGuideConfig = {
 type PackageManifest = {
     name: string;
     version: string;
+};
+
+type PackageFilterEntry = {
+    source?: string;
+};
+
+type PiSettings = {
+    packages?: Array<string | PackageFilterEntry>;
 };
 
 type GuideInitOptions = {
@@ -241,6 +250,13 @@ function settingsConfigPath(cwd: string): string {
 }
 
 function defaultPackageSource(manifest: PackageManifest): string {
+    const scopedNameMatch = /^@([^/]+)\/([^/]+)$/u.exec(manifest.name);
+    if (scopedNameMatch !== null) {
+        const owner = scopedNameMatch[1];
+        const repo = scopedNameMatch[2];
+        return `git:git@github.com:${owner}/${repo}@v${manifest.version}`;
+    }
+
     return `npm:${manifest.name}@${manifest.version}`;
 }
 
@@ -273,6 +289,82 @@ async function loadPackageManifest(): Promise<PackageManifest> {
         packageManifestCache = await readJsonFile<PackageManifest>(PACKAGE_MANIFEST_PATH);
     }
     return packageManifestCache;
+}
+
+function globalPiAgentDirectory(): string {
+    return resolve(homedir(), ".pi", "agent");
+}
+
+function globalSettingsPath(): string {
+    return resolve(globalPiAgentDirectory(), "settings.json");
+}
+
+function packageSourceString(entry: string | PackageFilterEntry): string | null {
+    if (typeof entry === "string") {
+        return entry;
+    }
+    if (typeof entry.source === "string") {
+        return entry.source;
+    }
+    return null;
+}
+
+function resolveLocalPackageSourcePath(settingsDirectory: string, source: string): string | null {
+    if (source.startsWith("npm:")) {
+        return null;
+    }
+    if (source.startsWith("git:")) {
+        return null;
+    }
+    if (/^[a-z]+:\/\//u.test(source)) {
+        return null;
+    }
+
+    if (source.startsWith("~/")) {
+        return resolve(homedir(), source.slice(2));
+    }
+    if (isAbsolute(source)) {
+        return resolve(source);
+    }
+    return resolve(settingsDirectory, source);
+}
+
+async function isCurrentPackageAvailableGlobally(): Promise<boolean> {
+    const globalPiRoot = globalPiAgentDirectory();
+    if (PACKAGE_ROOT.startsWith(`${globalPiRoot}/`)) {
+        return true;
+    }
+    if (PACKAGE_ROOT === globalPiRoot) {
+        return true;
+    }
+
+    const settingsPath = globalSettingsPath();
+    const pathState = await getPathState(settingsPath);
+    if (pathState.kind !== "exists") {
+        return false;
+    }
+
+    try {
+        const settings = await readJsonFile<PiSettings>(settingsPath);
+        const packageEntries = settings.packages ?? [];
+        for (const entry of packageEntries) {
+            const source = packageSourceString(entry);
+            if (source === null) {
+                continue;
+            }
+            const localPath = resolveLocalPackageSourcePath(dirname(settingsPath), source);
+            if (localPath === null) {
+                continue;
+            }
+            if (resolve(localPath) === PACKAGE_ROOT) {
+                return true;
+            }
+        }
+    } catch {
+        return false;
+    }
+
+    return false;
 }
 
 function dedupe(values: string[]): string[] {
@@ -828,8 +920,31 @@ async function runGuideInit(ctx: ExtensionCommandContext, args: string | undefin
     const agentsPath = resolve(ctx.cwd, "AGENTS.md");
     const createdPaths: string[] = [];
     const skippedPaths: string[] = [];
+    const settingsPathExists = await fileExists(settingsPath);
+    const globalPackageAvailable = await isCurrentPackageAvailableGlobally();
+    const shouldAutoSkipSettings =
+        options.writeSettings &&
+        options.packageSourceOverride === null &&
+        globalPackageAvailable &&
+        !settingsPathExists;
+    let writeSettings = options.writeSettings;
     let packageSource: string | null = null;
     let usedDefaultPackageSource = false;
+    let skippedSettingsReason: "request" | "global-package" | null = null;
+
+    if (shouldAutoSkipSettings) {
+        writeSettings = false;
+        skippedSettingsReason = "global-package";
+    }
+    if (!writeSettings) {
+        if (options.writeSettings) {
+            if (skippedSettingsReason === null) {
+                skippedSettingsReason = "request";
+            }
+        } else {
+            skippedSettingsReason = "request";
+        }
+    }
 
     if (!(await fileExists(configPath))) {
         await ensureParentDir(configPath);
@@ -846,11 +961,11 @@ async function runGuideInit(ctx: ExtensionCommandContext, args: string | undefin
         skippedPaths.push("AGENTS.md");
     }
 
-    if (options.writeSettings) {
+    if (writeSettings) {
         const manifest = await loadPackageManifest();
         packageSource = options.packageSourceOverride ?? defaultPackageSource(manifest);
         usedDefaultPackageSource = options.packageSourceOverride === null;
-        if (!(await fileExists(settingsPath))) {
+        if (!settingsPathExists) {
             await writeSettingsConfig(settingsPath, packageSource);
             createdPaths.push(SETTINGS_CONFIG_RELATIVE_PATH);
         } else {
@@ -864,9 +979,10 @@ async function runGuideInit(ctx: ExtensionCommandContext, args: string | undefin
             ctx.cwd,
             createdPaths,
             skippedPaths,
-            options.writeSettings,
+            writeSettings,
             packageSource,
             usedDefaultPackageSource,
+            skippedSettingsReason,
         ),
     );
 
@@ -920,8 +1036,8 @@ function buildGuideInitUsageLines(cwd: string): string[] {
         "usage: /guide-init [package-source] [--no-settings]",
         "modes:",
         "- /guide-init --no-settings",
-        "- /guide-init git:github.com/sillypoise/pi-guides@v0.1.0",
-        "- /guide-init npm:@sillypoise/pi-guides@0.1.0",
+        "- /guide-init git:git@github.com:sillypoise/pi-guides@v0.1.1",
+        "- /guide-init npm:@sillypoise/pi-guides@0.1.1",
         "notes:",
         "- use --no-settings when the package is already available globally",
         "- pass an explicit package source for reproducible repos",
@@ -935,6 +1051,7 @@ function buildGuideInitWidgetLines(
     writeSettings: boolean,
     packageSource: string | null,
     usedDefaultPackageSource: boolean,
+    skippedSettingsReason: "request" | "global-package" | null,
 ): string[] {
     const lines = [
         "pi guide init",
@@ -950,12 +1067,16 @@ function buildGuideInitWidgetLines(
         }
         if (usedDefaultPackageSource) {
             lines.push(
-                "note: the default settings source uses npm coordinates; pass an explicit git source until the package is published.",
+                "note: the default settings source uses the package git tag; pass an explicit source if this repo should pin something else.",
             );
         }
     } else {
         lines.push("setup mode: global package assumed");
-        lines.push("settings: skipped by request");
+        if (skippedSettingsReason === "global-package") {
+            lines.push("settings: skipped because the package is already available globally");
+        } else {
+            lines.push("settings: skipped by request");
+        }
     }
 
     lines.push("created:");
