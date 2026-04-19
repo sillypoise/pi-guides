@@ -86,6 +86,7 @@ The extension:
 - appends the resolved guide content to the effective system prompt
 - exposes helper commands
 - shows active guide status in the footer
+- can persist profile and mode updates back into `.pi/guides.json`
 
 ### 4. Package distribution: `package.json`
 
@@ -218,7 +219,17 @@ Important rule:
 
 ### `/guides`
 
-Shows the currently resolved guide state in a widget and updates footer status.
+Shows the currently resolved guide state in a structured widget and updates footer status.
+
+The widget includes:
+
+- current resolved status
+- config path
+- active profile and mode
+- precedence order
+- config-level additions, removals, and variant overrides when present
+- resolved guide entries with source paths and summaries
+- available profile list
 
 ### `/guide-init`
 
@@ -241,7 +252,29 @@ It will:
 
 - create `AGENTS.md` from the template if missing
 - update the managed header block if the markers are present exactly once
+- report `unchanged` when the managed header already matches the package template
 - refuse risky rewrites if the marker contract is missing or malformed
+
+### `/guide-profile <profile-id>`
+
+Persists a named profile into `.pi/guides.json` and reloads the runtime.
+
+Current v0.1 behavior:
+
+- profile ids come from `registry/profiles.json`
+- if the repo currently uses direct `guides`, the command switches to profile-based config
+- direct-guide-only fields are dropped during that transition
+- invalid profile ids are rejected explicitly
+
+### `/guide-mode <compact|full>`
+
+Persists the preferred guide mode into `.pi/guides.json` and reloads the runtime.
+
+Current v0.1 behavior:
+
+- accepted values are `compact` and `full`
+- invalid values are rejected explicitly
+- if no mode is provided, the command shows the current guide widget and explains usage
 
 ---
 

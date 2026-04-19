@@ -103,6 +103,11 @@ type LoadedGuideContent = {
     content: string;
 };
 
+type LoadedGuideConfig = {
+    configPath: string;
+    config: GuideConfig;
+};
+
 const PACKAGE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const REGISTRY_PATH = resolve(PACKAGE_ROOT, "registry", "guides.json");
 const PROFILES_PATH = resolve(PACKAGE_ROOT, "registry", "profiles.json");
@@ -111,6 +116,8 @@ const TEMPLATE_AGENTS_PATH = resolve(PACKAGE_ROOT, "templates", "repo-AGENTS.md"
 const GUIDE_CONFIG_RELATIVE_PATH = join(".pi", "guides.json");
 const GUIDE_STATUS_KEY = "pi-guides:status";
 const GUIDE_WIDGET_KEY = "pi-guides:widget";
+const GUIDE_MODE_COMPACT: GuideMode = "compact";
+const GUIDE_MODE_FULL: GuideMode = "full";
 const BEGIN_HEADER = "<!-- BEGIN MANAGED GUIDE HEADER -->";
 const END_HEADER = "<!-- END MANAGED GUIDE HEADER -->";
 
@@ -120,6 +127,18 @@ let profilesCache: ProfileRegistry | null = null;
 async function readJsonFile<T>(path: string): Promise<T> {
     const raw = await readFile(path, "utf8");
     return JSON.parse(raw) as T;
+}
+
+function cloneGuideConfig(config: GuideConfig): GuideConfig {
+    return {
+        version: config.version,
+        profile: config.profile,
+        guides: config.guides ? [...config.guides] : undefined,
+        mode: config.mode,
+        additions: config.additions ? [...config.additions] : undefined,
+        removals: config.removals ? [...config.removals] : undefined,
+        variants: config.variants ? { ...config.variants } : undefined,
+    };
 }
 
 async function getPathState(path: string): Promise<PathState> {
@@ -176,6 +195,33 @@ async function ensureExistingPath(path: string, label: string): Promise<void> {
     throw new Error(`${label} is not accessible: ${pathState.errorMessage}`);
 }
 
+function guideConfigPath(cwd: string): string {
+    return resolve(cwd, GUIDE_CONFIG_RELATIVE_PATH);
+}
+
+async function loadGuideConfig(cwd: string): Promise<LoadedGuideConfig> {
+    const configPath = guideConfigPath(cwd);
+    const configPathState = await getPathState(configPath);
+    if (configPathState.kind === "missing") {
+        throw new Error(`No ${GUIDE_CONFIG_RELATIVE_PATH} found`);
+    }
+    if (configPathState.kind === "error") {
+        throw new Error(configPathState.errorMessage);
+    }
+
+    const config = await readJsonFile<GuideConfig>(configPath);
+    if (config.version !== 1) {
+        throw new Error(`Unsupported guides config version '${String(config.version)}'`);
+    }
+
+    return { configPath, config };
+}
+
+async function writeGuideConfig(configPath: string, config: GuideConfig): Promise<void> {
+    const content = `${JSON.stringify(config, null, 2)}\n`;
+    await writeFile(configPath, content, "utf8");
+}
+
 async function loadRegistry(): Promise<GuideRegistry> {
     if (registryCache === null) {
         registryCache = await readJsonFile<GuideRegistry>(REGISTRY_PATH);
@@ -201,6 +247,17 @@ function dedupe(values: string[]): string[] {
         result.push(value);
     }
     return result;
+}
+
+function splitArgs(args: string | undefined): string[] {
+    if (args === undefined) {
+        return [];
+    }
+    const trimmedArgs = args.trim();
+    if (trimmedArgs.length === 0) {
+        return [];
+    }
+    return trimmedArgs.split(/\s+/u);
 }
 
 function fallbackVariantOrder(mode: GuideMode): string[] {
@@ -244,6 +301,16 @@ function renderStatus(state: ResolvedState): string {
         return "guides: error";
     }
     return "guides: off";
+}
+
+function formatProfileName(state: ResolvedActiveState): string {
+    if (state.profile === null) {
+        return "custom";
+    }
+    if (state.profileTitle === null) {
+        return state.profile;
+    }
+    return `${state.profile} (${state.profileTitle})`;
 }
 
 function rejectDirectGuideModifiers(config: GuideConfig): void {
@@ -482,6 +549,80 @@ async function buildInjectedPrompt(state: ResolvedActiveState, registry: GuideRe
     ].join("\n");
 }
 
+function pushOptionalConfigLines(lines: string[], label: string, values: string[] | undefined): void {
+    if (values === undefined) {
+        return;
+    }
+    if (values.length === 0) {
+        return;
+    }
+    lines.push(`${label}: ${values.join(", ")}`);
+}
+
+function pushVariantOverrideLines(lines: string[], variants: Record<string, string> | undefined): void {
+    if (variants === undefined) {
+        return;
+    }
+
+    const entries = Object.entries(variants);
+    if (entries.length === 0) {
+        return;
+    }
+
+    lines.push("variant overrides:");
+    for (const [guideId, variantId] of entries) {
+        lines.push(`- ${guideId} -> ${variantId}`);
+    }
+}
+
+function buildAvailableProfileLines(profiles: ProfileRegistry): string[] {
+    const lines = ["available profiles:"];
+    for (const [profileId, profile] of Object.entries(profiles.profiles)) {
+        const description = profile.description ?? "No description.";
+        lines.push(`- ${profileId}: ${description}`);
+    }
+    return lines;
+}
+
+async function buildGuidesWidgetLines(cwd: string, state: ResolvedState): Promise<string[]> {
+    if (!state.active) {
+        return widgetLines(state);
+    }
+
+    const registry = await loadRegistry();
+    const profiles = await loadProfiles();
+    const { config } = await loadGuideConfig(cwd);
+    const lines = [
+        "pi guides",
+        `status: ${renderStatus(state)}`,
+        `config: ${state.configPath}`,
+        `profile: ${formatProfileName(state)}`,
+        `mode: ${state.mode}`,
+        `precedence: ${formatPrecedence(registry)}`,
+    ];
+
+    if (config.profile !== undefined) {
+        lines.push(`config profile: ${config.profile}`);
+    }
+    if (config.guides !== undefined) {
+        lines.push(`config guides: ${config.guides.join(", ")}`);
+    }
+    pushOptionalConfigLines(lines, "config additions", config.additions);
+    pushOptionalConfigLines(lines, "config removals", config.removals);
+    pushVariantOverrideLines(lines, config.variants);
+
+    lines.push("resolved guides:");
+    for (const guide of state.guides) {
+        lines.push(`- ${guide.id} (${guide.variant})`);
+        lines.push(`  precedence: ${guide.precedence}`);
+        lines.push(`  source: ${guide.relativePath}`);
+        lines.push(`  summary: ${guide.summary}`);
+    }
+
+    lines.push(...buildAvailableProfileLines(profiles));
+    return lines;
+}
+
 function statusNotifyLevel(state: ResolvedState): NotifyLevel {
     if (state.active) {
         return "info";
@@ -649,12 +790,125 @@ function notifyGuidesState(ctx: ExtensionContext, state: ResolvedState): void {
     ctx.ui.notify(`pi guides: ${state.reason}`, "warning");
 }
 
+function setGuidesWidget(ctx: ExtensionContext, lines: string[]): void {
+    ctx.ui.setWidget(GUIDE_WIDGET_KEY, lines);
+}
+
+async function showGuidesWidget(ctx: ExtensionContext, state: ResolvedState): Promise<void> {
+    const lines = await buildGuidesWidgetLines(ctx.cwd, state);
+    setGuidesWidget(ctx, lines);
+}
+
+async function showProfilesWidget(ctx: ExtensionCommandContext, state: ResolvedState): Promise<void> {
+    const profiles = await loadProfiles();
+    const lines = [
+        "pi guide profiles",
+        `status: ${renderStatus(state)}`,
+        `config: ${state.configPath}`,
+    ];
+    lines.push(...buildAvailableProfileLines(profiles));
+    setGuidesWidget(ctx, lines);
+}
+
+function buildProfileConfig(
+    currentConfig: GuideConfig,
+    nextProfileId: string,
+    profile: ProfileRecord,
+): GuideConfig {
+    const nextConfig = cloneGuideConfig(currentConfig);
+    nextConfig.profile = nextProfileId;
+    delete nextConfig.guides;
+
+    if (currentConfig.profile === undefined) {
+        nextConfig.additions = [];
+        nextConfig.removals = [];
+    }
+
+    if (nextConfig.mode === undefined) {
+        nextConfig.mode = profile.mode ?? "compact";
+    }
+    return nextConfig;
+}
+
+function parseGuideModeArg(args: string | undefined): GuideMode | "missing" | "invalid" {
+    const parts = splitArgs(args);
+    if (parts.length === 0) {
+        return "missing";
+    }
+
+    const mode = parts[0];
+    if (mode === GUIDE_MODE_COMPACT) {
+        return GUIDE_MODE_COMPACT;
+    }
+    if (mode === GUIDE_MODE_FULL) {
+        return GUIDE_MODE_FULL;
+    }
+    return "invalid";
+}
+
+async function runGuideProfile(ctx: ExtensionCommandContext, args: string | undefined): Promise<void> {
+    const state = await refreshStatus(ctx);
+    const parts = splitArgs(args);
+    if (parts.length === 0) {
+        await showProfilesWidget(ctx, state);
+        ctx.ui.notify("guide-profile: specify a profile id to persist it", "info");
+        return;
+    }
+
+    const profileId = parts[0];
+    const profiles = await loadProfiles();
+    const profile = profiles.profiles[profileId];
+    if (profile === undefined) {
+        await showProfilesWidget(ctx, state);
+        ctx.ui.notify(`guide-profile: unknown profile '${profileId}'`, "warning");
+        return;
+    }
+
+    try {
+        const loadedConfig = await loadGuideConfig(ctx.cwd);
+        const nextConfig = buildProfileConfig(loadedConfig.config, profileId, profile);
+        await writeGuideConfig(loadedConfig.configPath, nextConfig);
+        ctx.ui.notify(`guide-profile: wrote profile '${profileId}'; reloading runtime`, "success");
+        await ctx.reload();
+    } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        ctx.ui.notify(`guide-profile: ${message}`, "warning");
+    }
+}
+
+async function runGuideMode(ctx: ExtensionCommandContext, args: string | undefined): Promise<void> {
+    const state = await refreshStatus(ctx);
+    const nextMode = parseGuideModeArg(args);
+    if (nextMode === "missing") {
+        await showGuidesWidget(ctx, state);
+        ctx.ui.notify("guide-mode: specify 'compact' or 'full' to persist a mode", "info");
+        return;
+    }
+    if (nextMode === "invalid") {
+        await showGuidesWidget(ctx, state);
+        ctx.ui.notify("guide-mode: mode must be 'compact' or 'full'", "warning");
+        return;
+    }
+
+    try {
+        const loadedConfig = await loadGuideConfig(ctx.cwd);
+        const nextConfig = cloneGuideConfig(loadedConfig.config);
+        nextConfig.mode = nextMode;
+        await writeGuideConfig(loadedConfig.configPath, nextConfig);
+        ctx.ui.notify(`guide-mode: wrote mode '${nextMode}'; reloading runtime`, "success");
+        await ctx.reload();
+    } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        ctx.ui.notify(`guide-mode: ${message}`, "warning");
+    }
+}
+
 export default function guideSystemExtension(pi: ExtensionAPI) {
     pi.registerCommand("guides", {
         description: "Show resolved pi guide state for this repository",
         handler: async (_args, ctx) => {
             const state = await refreshStatus(ctx);
-            ctx.ui.setWidget(GUIDE_WIDGET_KEY, widgetLines(state));
+            await showGuidesWidget(ctx, state);
             notifyGuidesState(ctx, state);
         },
     });
@@ -670,6 +924,20 @@ export default function guideSystemExtension(pi: ExtensionAPI) {
         description: "Refresh the managed header block in repo AGENTS.md from the package template",
         handler: async (_args, ctx) => {
             await runGuideSync(ctx);
+        },
+    });
+
+    pi.registerCommand("guide-profile", {
+        description: "Persist a named guide profile to .pi/guides.json",
+        handler: async (args, ctx) => {
+            await runGuideProfile(ctx, args);
+        },
+    });
+
+    pi.registerCommand("guide-mode", {
+        description: "Persist the active guide mode to .pi/guides.json",
+        handler: async (args, ctx) => {
+            await runGuideMode(ctx, args);
         },
     });
 

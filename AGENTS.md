@@ -68,6 +68,8 @@ If a rule should apply across multiple repositories, promote it into the guide p
   - `/guides`
   - `/guide-init`
   - `/guide-sync`
+  - `/guide-profile`
+  - `/guide-mode`
   - `./bin/validate-pi-guides`
 - Safe-to-edit areas:
   - `README.md`
