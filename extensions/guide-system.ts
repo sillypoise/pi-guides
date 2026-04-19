@@ -116,6 +116,7 @@ type PackageManifest = {
 type GuideInitOptions = {
     writeSettings: boolean;
     packageSourceOverride: string | null;
+    showHelp: boolean;
 };
 
 const PACKAGE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -302,11 +303,22 @@ function parseGuideInitOptions(args: string | undefined): GuideInitOptions {
     const parts = splitArgs(args);
     let writeSettings = true;
     let packageSourceOverride: string | null = null;
+    let showHelp = false;
 
     for (const part of parts) {
         if (part === "--no-settings") {
             writeSettings = false;
             continue;
+        }
+        if (part === "--help" || part === "-h") {
+            showHelp = true;
+            continue;
+        }
+        if (part.startsWith("-")) {
+            throw new Error(`guide-init: unknown option '${part}'`);
+        }
+        if (packageSourceOverride !== null) {
+            throw new Error("guide-init: expected at most one package source argument");
         }
         packageSourceOverride = part;
     }
@@ -314,6 +326,7 @@ function parseGuideInitOptions(args: string | undefined): GuideInitOptions {
     return {
         writeSettings,
         packageSourceOverride,
+        showHelp,
     };
 }
 
@@ -794,13 +807,29 @@ async function syncAgentsFile(cwd: string): Promise<SyncAgentsResult> {
 }
 
 async function runGuideInit(ctx: ExtensionCommandContext, args: string | undefined): Promise<void> {
-    const options = parseGuideInitOptions(args);
+    let options: GuideInitOptions;
+    try {
+        options = parseGuideInitOptions(args);
+    } catch (error) {
+        setGuidesWidget(ctx, buildGuideInitUsageLines(ctx.cwd));
+        const message = error instanceof Error ? error.message : String(error);
+        ctx.ui.notify(message, "warning");
+        return;
+    }
+
+    if (options.showHelp) {
+        setGuidesWidget(ctx, buildGuideInitUsageLines(ctx.cwd));
+        ctx.ui.notify("guide-init: initialize repo guide files from package templates", "info");
+        return;
+    }
+
     const configPath = guideConfigPath(ctx.cwd);
     const settingsPath = settingsConfigPath(ctx.cwd);
     const agentsPath = resolve(ctx.cwd, "AGENTS.md");
     const createdPaths: string[] = [];
     const skippedPaths: string[] = [];
     let packageSource: string | null = null;
+    let usedDefaultPackageSource = false;
 
     if (!(await fileExists(configPath))) {
         await ensureParentDir(configPath);
@@ -820,6 +849,7 @@ async function runGuideInit(ctx: ExtensionCommandContext, args: string | undefin
     if (options.writeSettings) {
         const manifest = await loadPackageManifest();
         packageSource = options.packageSourceOverride ?? defaultPackageSource(manifest);
+        usedDefaultPackageSource = options.packageSourceOverride === null;
         if (!(await fileExists(settingsPath))) {
             await writeSettingsConfig(settingsPath, packageSource);
             createdPaths.push(SETTINGS_CONFIG_RELATIVE_PATH);
@@ -828,7 +858,17 @@ async function runGuideInit(ctx: ExtensionCommandContext, args: string | undefin
         }
     }
 
-    setGuidesWidget(ctx, buildGuideInitWidgetLines(ctx.cwd, createdPaths, skippedPaths, packageSource));
+    setGuidesWidget(
+        ctx,
+        buildGuideInitWidgetLines(
+            ctx.cwd,
+            createdPaths,
+            skippedPaths,
+            options.writeSettings,
+            packageSource,
+            usedDefaultPackageSource,
+        ),
+    );
 
     if (createdPaths.length === 0) {
         ctx.ui.notify("guide-init: nothing created; files already exist", "info");
@@ -873,21 +913,49 @@ function setGuidesWidget(ctx: ExtensionContext, lines: string[]): void {
     ctx.ui.setWidget(GUIDE_WIDGET_KEY, lines);
 }
 
+function buildGuideInitUsageLines(cwd: string): string[] {
+    return [
+        "pi guide init",
+        `cwd: ${cwd}`,
+        "usage: /guide-init [package-source] [--no-settings]",
+        "modes:",
+        "- /guide-init --no-settings",
+        "- /guide-init git:github.com/sillypoise/pi-guides@v0.1.0",
+        "- /guide-init npm:@sillypoise/pi-guides@0.1.0",
+        "notes:",
+        "- use --no-settings when the package is already available globally",
+        "- pass an explicit package source for reproducible repos",
+    ];
+}
+
 function buildGuideInitWidgetLines(
     cwd: string,
     createdPaths: string[],
     skippedPaths: string[],
+    writeSettings: boolean,
     packageSource: string | null,
+    usedDefaultPackageSource: boolean,
 ): string[] {
     const lines = [
         "pi guide init",
         `cwd: ${cwd}`,
     ];
 
-    if (packageSource === null) {
-        lines.push("settings: skipped by request");
+    if (writeSettings) {
+        lines.push("setup mode: repo-pinned package");
+        if (packageSource === null) {
+            lines.push("settings source: unavailable");
+        } else {
+            lines.push(`settings source: ${packageSource}`);
+        }
+        if (usedDefaultPackageSource) {
+            lines.push(
+                "note: the default settings source uses npm coordinates; pass an explicit git source until the package is published.",
+            );
+        }
     } else {
-        lines.push(`settings source: ${packageSource}`);
+        lines.push("setup mode: global package assumed");
+        lines.push("settings: skipped by request");
     }
 
     lines.push("created:");
@@ -908,16 +976,33 @@ function buildGuideInitWidgetLines(
         }
     }
 
+    lines.push("next:");
+    lines.push("- /guides");
+    if (writeSettings) {
+        lines.push("- commit .pi/settings.json, .pi/guides.json, and AGENTS.md for reproducible repos");
+    } else {
+        lines.push("- commit .pi/guides.json and AGENTS.md when the repo should keep guide activation");
+    }
+
     return lines;
 }
 
 function buildGuideSyncWidgetLines(cwd: string, result: SyncAgentsResult): string[] {
-    return [
+    const lines = [
         "pi guide sync",
         `cwd: ${cwd}`,
         `result: ${result}`,
         "target: AGENTS.md",
     ];
+
+    if (result === "skipped") {
+        lines.push("note: AGENTS.md is missing the managed guide header markers");
+    }
+    if (result === "unchanged") {
+        lines.push("note: the managed guide header already matches the package template");
+    }
+
+    return lines;
 }
 
 async function showGuidesWidget(ctx: ExtensionContext, state: ResolvedState): Promise<void> {
@@ -934,6 +1019,10 @@ async function showProfilesWidget(ctx: ExtensionCommandContext, state: ResolvedS
     ];
     lines.push(...buildAvailableProfileLines(profiles));
     setGuidesWidget(ctx, lines);
+}
+
+function guideConfigContent(config: GuideConfig): string {
+    return JSON.stringify(cloneGuideConfig(config), null, 2);
 }
 
 function buildProfileConfig(
@@ -993,6 +1082,14 @@ async function runGuideProfile(ctx: ExtensionCommandContext, args: string | unde
     try {
         const loadedConfig = await loadGuideConfig(ctx.cwd);
         const nextConfig = buildProfileConfig(loadedConfig.config, profileId, profile);
+        const currentConfigContent = guideConfigContent(loadedConfig.config);
+        const nextConfigContent = guideConfigContent(nextConfig);
+        if (currentConfigContent === nextConfigContent) {
+            await showProfilesWidget(ctx, state);
+            ctx.ui.notify(`guide-profile: profile '${profileId}' is already persisted`, "info");
+            return;
+        }
+
         await writeGuideConfig(loadedConfig.configPath, nextConfig);
         ctx.ui.notify(`guide-profile: wrote profile '${profileId}'; reloading runtime`, "success");
         await ctx.reload();
@@ -1020,6 +1117,14 @@ async function runGuideMode(ctx: ExtensionCommandContext, args: string | undefin
         const loadedConfig = await loadGuideConfig(ctx.cwd);
         const nextConfig = cloneGuideConfig(loadedConfig.config);
         nextConfig.mode = nextMode;
+        const currentConfigContent = guideConfigContent(loadedConfig.config);
+        const nextConfigContent = guideConfigContent(nextConfig);
+        if (currentConfigContent === nextConfigContent) {
+            await showGuidesWidget(ctx, state);
+            ctx.ui.notify(`guide-mode: mode '${nextMode}' is already persisted`, "info");
+            return;
+        }
+
         await writeGuideConfig(loadedConfig.configPath, nextConfig);
         ctx.ui.notify(`guide-mode: wrote mode '${nextMode}'; reloading runtime`, "success");
         await ctx.reload();

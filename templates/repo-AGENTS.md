@@ -10,6 +10,11 @@ Active guides for this repository are defined in:
 - `.pi/guides.json` — canonical machine-readable guide selection
 - installed pi guide package extension — resolves and injects active guides into the system prompt
 
+The pi guide package can be made available either:
+
+- globally from `~/.pi/agent/settings.json`, or
+- repo-locally from `.pi/settings.json`
+
 Repo-local `AGENTS.md` supplements the guide system with repository-specific context.
 It does not define the canonical active guide set.
 

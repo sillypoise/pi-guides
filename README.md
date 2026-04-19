@@ -32,43 +32,63 @@ Not included yet:
 
 ## Quick Start
 
-### Consumer repo quick start
+The guide system supports two bootstrap modes.
 
-1. Install this package for the repo:
+### Mode A. Personal convenience mode
 
-```json
-{
-  "packages": [
-    "npm:@sillypoise/pi-guides@0.1.0"
-  ]
-}
-```
+Use this when the package is already available globally from `~/.pi/agent/settings.json`.
 
-Put that in `.pi/settings.json`, or use `pi install -l npm:@sillypoise/pi-guides@0.1.0`.
-
-2. Start pi in the repository.
-
-3. Run:
+1. Start pi in the target repository.
+2. Run:
 
 ```text
-/guide-init
+/guide-init --no-settings
 ```
 
-This creates any missing bootstrap files:
-
-- `.pi/guides.json`
-- `.pi/settings.json` when missing
-- `AGENTS.md`
-
-4. Inspect the active guide state:
+3. Inspect the active state:
 
 ```text
 /guides
 ```
 
-5. Work normally.
+This creates any missing:
 
-Once the extension is loaded and `.pi/guides.json` is valid, the active guides are injected on each normal agent turn automatically.
+- `.pi/guides.json`
+- `AGENTS.md`
+
+It does **not** create `.pi/settings.json`.
+Use this for personal repos and quick local setup.
+
+### Mode B. Reproducible repo mode
+
+Use this when the repository should carry its own package pin.
+
+1. Start pi in the target repository.
+2. Run one of:
+
+```text
+/guide-init git:github.com/sillypoise/pi-guides@v0.1.0
+```
+
+or:
+
+```text
+/guide-init npm:@sillypoise/pi-guides@0.1.0
+```
+
+3. Inspect the active state:
+
+```text
+/guides
+```
+
+This creates any missing:
+
+- `.pi/guides.json`
+- `.pi/settings.json`
+- `AGENTS.md`
+
+Use this for shared repos and any repository that needs deterministic package sourcing.
 
 ### Local development in this repo
 
@@ -198,9 +218,29 @@ bin/
 
 ## Installation
 
+### Recommended rollout order
+
+1. local path during package development
+2. pinned git source during early dogfooding and ansible rollout
+3. pinned npm version once publishing is live
+
 ### Global install
 
-Example global pi settings:
+Global install makes the extension and slash commands available everywhere.
+It does **not** activate guides in a repo by itself.
+A repo still needs `.pi/guides.json`.
+
+Example global pi settings using a pinned git source:
+
+```json
+{
+  "packages": [
+    "git:github.com/sillypoise/pi-guides@v0.1.0"
+  ]
+}
+```
+
+Equivalent npm form once published:
 
 ```json
 {
@@ -210,15 +250,24 @@ Example global pi settings:
 }
 ```
 
-You can place that in `~/.pi/agent/settings.json`, or install through:
-
-```bash
-pi install npm:@sillypoise/pi-guides@0.1.0
-```
+You can place that in `~/.pi/agent/settings.json`, or install through `pi install ...`.
 
 ### Project-local install
 
-In a repo consuming this package:
+Project-local install pins the package in the repository itself.
+That is the recommended setup for shared repos.
+
+Git example:
+
+```json
+{
+  "packages": [
+    "git:github.com/sillypoise/pi-guides@v0.1.0"
+  ]
+}
+```
+
+Npm example once published:
 
 ```json
 {
@@ -228,11 +277,7 @@ In a repo consuming this package:
 }
 ```
 
-Place that in `.pi/settings.json`, or install through:
-
-```bash
-pi install -l npm:@sillypoise/pi-guides@0.1.0
-```
+Place that in `.pi/settings.json`, or install through `pi install -l ...`.
 
 ### Local path install
 
@@ -247,6 +292,39 @@ For local testing:
 ```
 
 This is most useful while iterating on the package itself.
+
+### Dotfiles / ansible integration
+
+The recommended workstation split is:
+
+- `sp-dotfiles` installs pi and writes `~/.pi/agent/settings.json`
+- dotfiles optionally registers this package globally at a pinned source
+- repositories opt into guide activation with `.pi/guides.json`
+- shared repos can additionally pin the package in `.pi/settings.json`
+
+That means:
+
+- global package install = guide tooling is available
+- repo `.pi/guides.json` = guides are active in that repo
+- repo `.pi/settings.json` = package source is reproducible in that repo
+
+### Migration from the old OpenCode workflow
+
+Old workflow:
+
+- clone a shared guides repo into the workstation
+- point tool config at shared instruction files
+- use shell scripts to initialize and sync repo overlays
+
+Pi-native workflow:
+
+- install a pi package globally or per-repo
+- let the extension resolve and inject active guides
+- keep repo activation in `.pi/guides.json`
+- keep repo context in `AGENTS.md`
+- use `/guide-init` and `/guide-sync` instead of external shell scripts
+
+This removes the runtime dependency on a manually cloned shared guide directory.
 
 ---
 
@@ -392,8 +470,11 @@ Current v0.1 behavior:
   - `/guide-init npm:@sillypoise/pi-guides@0.1.0`
   - `/guide-init git:github.com/sillypoise/pi-guides@v0.1.0`
 - you can skip `.pi/settings.json` generation with `--no-settings`
+- `-h` and `--help` show usage guidance in the widget
+- unknown options are rejected explicitly
+- the widget distinguishes global-package vs repo-pinned bootstrap mode
+- the widget includes next-step hints after scaffolding
 - it does not attempt complex AGENTS migrations yet
-- it renders a widget summarizing created vs skipped files
 
 ### `/guide-sync`
 
@@ -417,6 +498,7 @@ Current v0.1 behavior:
 - if the repo currently uses direct `guides`, the command switches to profile-based config
 - direct-guide-only fields are dropped during that transition
 - invalid profile ids are rejected explicitly
+- a no-op write is detected and reported without reloading
 - calling without arguments shows available profiles
 
 ### `/guide-mode <compact|full>`
@@ -427,6 +509,7 @@ Current v0.1 behavior:
 
 - accepted values are `compact` and `full`
 - invalid values are rejected explicitly
+- a no-op write is detected and reported without reloading
 - if no mode is provided, the command shows the current guide widget and explains usage
 
 ---

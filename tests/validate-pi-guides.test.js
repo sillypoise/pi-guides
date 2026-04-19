@@ -19,13 +19,21 @@ const BEGIN_HEADER = "<!-- BEGIN MANAGED GUIDE HEADER -->";
 const END_HEADER = "<!-- END MANAGED GUIDE HEADER -->";
 const FIXTURE_RELATIVE_PATHS = [
   "package.json",
+  "README.md",
   "registry/guides.json",
   "registry/profiles.json",
+  "schemas/guides.schema.json",
+  "schemas/profiles.schema.json",
   "templates/repo-AGENTS.md",
+  "templates/guides.json.example",
+  "templates/settings.json.example",
   "extensions/guide-system.ts",
   "prompts/guide-review.md",
   "files/tigerstyle-strict-compact.md",
   "files/tigerstyle-strict-full.md",
+  "bin/validate-pi-guides",
+  ".pi/guides.json",
+  ".pi/settings.json",
 ];
 
 function writeFixtureFile(fixtureRootPath, relativePath, content) {

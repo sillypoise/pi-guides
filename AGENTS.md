@@ -55,11 +55,11 @@ If a rule should apply across multiple repositories, promote it into the guide p
 
 - Install: no package install step is currently required for pi runtime loading.
 - Build: none.
-- Test: none yet.
+- Test: `node --test`
 - Lint: none yet.
 - Typecheck: none yet.
 - Validation: `./bin/validate-pi-guides`
-- Run one test: no single-test harness exists yet.
+- Run one test: `node --test tests/guide-system-commands.test.js`
 
 ## Local Workflow Notes
 
