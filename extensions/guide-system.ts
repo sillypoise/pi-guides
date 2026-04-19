@@ -1,83 +1,107 @@
 import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@mariozechner/pi-coding-agent";
+import type {
+    ExtensionAPI,
+    ExtensionCommandContext,
+    ExtensionContext,
+} from "@mariozechner/pi-coding-agent";
 
 type GuideMode = "compact" | "full";
 type PrecedenceId = "rulebook" | "heuristics" | "playbook" | "framework";
+type NotifyLevel = "info" | "warning";
+type SyncAgentsResult = "created" | "updated" | "unchanged" | "skipped";
 
 type VariantRecord = {
-	path: string;
-	size: GuideMode;
-	strictness: string;
+    path: string;
+    size: GuideMode;
+    strictness: string;
 };
 
 type GuideRecord = {
-	title: string;
-	archetype: string;
-	precedence: PrecedenceId;
-	summary: string;
-	tags?: string[];
-	defaults: Record<GuideMode, string>;
-	variants: Record<string, VariantRecord>;
-	skill?: { name: string; manualOnly?: boolean } | null;
+    title: string;
+    archetype: string;
+    precedence: PrecedenceId;
+    summary: string;
+    tags?: string[];
+    defaults: Record<GuideMode, string>;
+    variants: Record<string, VariantRecord>;
+    skill?: { name: string; manualOnly?: boolean } | null;
 };
 
 type GuideRegistry = {
-	version: 1;
-	precedence: Array<{ id: PrecedenceId; rank: number }>;
-	guides: Record<string, GuideRecord>;
+    version: 1;
+    precedence: Array<{ id: PrecedenceId; rank: number }>;
+    guides: Record<string, GuideRecord>;
 };
 
 type ProfileRecord = {
-	title: string;
-	description?: string;
-	guides: string[];
-	mode?: GuideMode;
+    title: string;
+    description?: string;
+    guides: string[];
+    mode?: GuideMode;
 };
 
 type ProfileRegistry = {
-	version: 1;
-	profiles: Record<string, ProfileRecord>;
+    version: 1;
+    profiles: Record<string, ProfileRecord>;
 };
 
 type GuideConfig = {
-	version: 1;
-	profile?: string;
-	guides?: string[];
-	mode?: GuideMode;
-	additions?: string[];
-	removals?: string[];
-	variants?: Record<string, string>;
+    version: 1;
+    profile?: string;
+    guides?: string[];
+    mode?: GuideMode;
+    additions?: string[];
+    removals?: string[];
+    variants?: Record<string, string>;
 };
 
 type ResolvedGuide = {
-	id: string;
-	title: string;
-	precedence: PrecedenceId;
-	precedenceRank: number;
-	variant: string;
-	relativePath: string;
-	absolutePath: string;
-	summary: string;
+    id: string;
+    title: string;
+    precedence: PrecedenceId;
+    precedenceRank: number;
+    variant: string;
+    relativePath: string;
+    absolutePath: string;
+    summary: string;
 };
 
-type ResolvedState =
-	| {
-		active: false;
-		status: string;
-		reason: string;
-		configPath: string;
-	  }
-	| {
-		active: true;
-		status: string;
-		configPath: string;
-		profile: string | null;
-		profileTitle: string | null;
-		mode: GuideMode;
-		guides: ResolvedGuide[];
-	  };
+type ResolvedInactiveState = {
+    active: false;
+    inactiveKind: "off" | "error";
+    reason: string;
+    configPath: string;
+};
+
+type ResolvedActiveState = {
+    active: true;
+    configPath: string;
+    profile: string | null;
+    profileTitle: string | null;
+    mode: GuideMode;
+    guides: ResolvedGuide[];
+};
+
+type ResolvedState = ResolvedInactiveState | ResolvedActiveState;
+
+type PathState =
+    | { kind: "exists" }
+    | { kind: "missing" }
+    | { kind: "error"; errorMessage: string };
+
+type ResolvedSource = {
+    profile: string | null;
+    profileTitle: string | null;
+    mode: GuideMode;
+    ids: string[];
+};
+
+type LoadedGuideContent = {
+    guide: ResolvedGuide;
+    content: string;
+};
 
 const PACKAGE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const REGISTRY_PATH = resolve(PACKAGE_ROOT, "registry", "guides.json");
@@ -94,411 +118,586 @@ let registryCache: GuideRegistry | null = null;
 let profilesCache: ProfileRegistry | null = null;
 
 async function readJsonFile<T>(path: string): Promise<T> {
-	const raw = await readFile(path, "utf8");
-	return JSON.parse(raw) as T;
+    const raw = await readFile(path, "utf8");
+    return JSON.parse(raw) as T;
+}
+
+async function getPathState(path: string): Promise<PathState> {
+    try {
+        await stat(path);
+        return { kind: "exists" };
+    } catch (error) {
+        if (error instanceof Error) {
+            const errorWithCode = error as Error & { code?: string };
+            if (errorWithCode.code === "ENOENT") {
+                return { kind: "missing" };
+            }
+        }
+
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        return { kind: "error", errorMessage };
+    }
 }
 
 async function fileExists(path: string): Promise<boolean> {
-	try {
-		await stat(path);
-		return true;
-	} catch {
-		return false;
-	}
+    const pathState = await getPathState(path);
+    if (pathState.kind === "exists") {
+        return true;
+    }
+    return false;
+}
+
+function makeOffState(configPath: string): ResolvedInactiveState {
+    return {
+        active: false,
+        inactiveKind: "off",
+        reason: `No ${GUIDE_CONFIG_RELATIVE_PATH} found`,
+        configPath,
+    };
+}
+
+function makeErrorState(configPath: string, reason: string): ResolvedInactiveState {
+    return {
+        active: false,
+        inactiveKind: "error",
+        reason,
+        configPath,
+    };
+}
+
+async function ensureExistingPath(path: string, label: string): Promise<void> {
+    const pathState = await getPathState(path);
+    if (pathState.kind === "exists") {
+        return;
+    }
+    if (pathState.kind === "missing") {
+        throw new Error(`${label} does not exist: ${path}`);
+    }
+    throw new Error(`${label} is not accessible: ${pathState.errorMessage}`);
 }
 
 async function loadRegistry(): Promise<GuideRegistry> {
-	if (!registryCache) {
-		registryCache = await readJsonFile<GuideRegistry>(REGISTRY_PATH);
-	}
-	return registryCache;
+    if (registryCache === null) {
+        registryCache = await readJsonFile<GuideRegistry>(REGISTRY_PATH);
+    }
+    return registryCache;
 }
 
 async function loadProfiles(): Promise<ProfileRegistry> {
-	if (!profilesCache) {
-		profilesCache = await readJsonFile<ProfileRegistry>(PROFILES_PATH);
-	}
-	return profilesCache;
+    if (profilesCache === null) {
+        profilesCache = await readJsonFile<ProfileRegistry>(PROFILES_PATH);
+    }
+    return profilesCache;
 }
 
 function dedupe(values: string[]): string[] {
-	const seen = new Set<string>();
-	const result: string[] = [];
-	for (const value of values) {
-		if (!seen.has(value)) {
-			seen.add(value);
-			result.push(value);
-		}
-	}
-	return result;
+    const seen = new Set<string>();
+    const result: string[] = [];
+    for (const value of values) {
+        if (seen.has(value)) {
+            continue;
+        }
+        seen.add(value);
+        result.push(value);
+    }
+    return result;
 }
 
 function fallbackVariantOrder(mode: GuideMode): string[] {
-	if (mode === "compact") {
-		return ["strict-compact", "pragmatic-compact", "strict-full", "pragmatic-full"];
-	}
-	return ["strict-full", "pragmatic-full", "strict-compact", "pragmatic-compact"];
+    if (mode === "compact") {
+        return ["strict-compact", "pragmatic-compact", "strict-full", "pragmatic-full"];
+    }
+    return ["strict-full", "pragmatic-full", "strict-compact", "pragmatic-compact"];
 }
 
 function pickVariant(guide: GuideRecord, mode: GuideMode, explicitVariant?: string): string {
-	if (explicitVariant) {
-		if (!guide.variants[explicitVariant]) {
-			throw new Error(`Unknown variant '${explicitVariant}' for guide '${guide.title}'`);
-		}
-		return explicitVariant;
-	}
+    if (explicitVariant !== undefined) {
+        if (!guide.variants[explicitVariant]) {
+            throw new Error(`Unknown variant '${explicitVariant}' for guide '${guide.title}'`);
+        }
+        return explicitVariant;
+    }
 
-	const preferred = guide.defaults[mode];
-	if (preferred && guide.variants[preferred]) {
-		return preferred;
-	}
+    const preferred = guide.defaults[mode];
+    if (preferred !== undefined) {
+        if (guide.variants[preferred]) {
+            return preferred;
+        }
+    }
 
-	for (const candidate of fallbackVariantOrder(mode)) {
-		if (guide.variants[candidate]) {
-			return candidate;
-		}
-	}
+    for (const candidate of fallbackVariantOrder(mode)) {
+        if (!guide.variants[candidate]) {
+            continue;
+        }
+        return candidate;
+    }
 
-	throw new Error(`Guide '${guide.title}' has no usable variant for mode '${mode}'`);
+    throw new Error(`Guide '${guide.title}' has no usable variant for mode '${mode}'`);
 }
 
 function renderStatus(state: ResolvedState): string {
-	if (!state.active) {
-		return "guides: off";
-	}
-	const profile = state.profile ?? "custom";
-	return `guides: ${profile} (${state.mode})`;
+    if (state.active) {
+        const profile = state.profile ?? "custom";
+        return `guides: ${profile} (${state.mode})`;
+    }
+    if (state.inactiveKind === "error") {
+        return "guides: error";
+    }
+    return "guides: off";
 }
 
-function resolveSourceIds(config: GuideConfig, profiles: ProfileRegistry): {
-	profile: string | null;
-	profileTitle: string | null;
-	mode: GuideMode;
-	ids: string[];
-} {
-	if (config.profile && config.guides) {
-		throw new Error(".pi/guides.json cannot define both 'profile' and 'guides'");
-	}
+function rejectDirectGuideModifiers(config: GuideConfig): void {
+    const additions = config.additions ?? [];
+    if (additions.length > 0) {
+        throw new Error(".pi/guides.json cannot use 'additions' with direct 'guides'");
+    }
 
-	if (!config.profile && !config.guides) {
-		throw new Error(".pi/guides.json must define either 'profile' or 'guides'");
-	}
+    const removals = config.removals ?? [];
+    if (removals.length > 0) {
+        throw new Error(".pi/guides.json cannot use 'removals' with direct 'guides'");
+    }
+}
 
-	if (config.profile) {
-		const profile = profiles.profiles[config.profile];
-		if (!profile) {
-			throw new Error(`Unknown profile '${config.profile}'`);
-		}
-		const ids = dedupe([
-			...profile.guides,
-			...(config.additions ?? []),
-		]).filter((id) => !(config.removals ?? []).includes(id));
-		return {
-			profile: config.profile,
-			profileTitle: profile.title,
-			mode: config.mode ?? profile.mode ?? "compact",
-			ids,
-		};
-	}
+function resolveProfileSource(config: GuideConfig, profiles: ProfileRegistry): ResolvedSource {
+    const profileId = config.profile;
+    if (profileId === undefined) {
+        throw new Error("Expected profile-based guide config");
+    }
 
-	return {
-		profile: null,
-		profileTitle: null,
-		mode: config.mode ?? "compact",
-		ids: dedupe(config.guides ?? []),
-	};
+    const profile = profiles.profiles[profileId];
+    if (!profile) {
+        throw new Error(`Unknown profile '${profileId}'`);
+    }
+
+    const baseIds = profile.guides;
+    const additions = config.additions ?? [];
+    const removals = config.removals ?? [];
+    const ids = dedupe([...baseIds, ...additions]).filter((id) => !removals.includes(id));
+
+    return {
+        profile: profileId,
+        profileTitle: profile.title,
+        mode: config.mode ?? profile.mode ?? "compact",
+        ids,
+    };
+}
+
+function resolveDirectGuideSource(config: GuideConfig): ResolvedSource {
+    rejectDirectGuideModifiers(config);
+    return {
+        profile: null,
+        profileTitle: null,
+        mode: config.mode ?? "compact",
+        ids: dedupe(config.guides ?? []),
+    };
+}
+
+function resolveSourceIds(config: GuideConfig, profiles: ProfileRegistry): ResolvedSource {
+    if (config.profile !== undefined) {
+        if (config.guides !== undefined) {
+            throw new Error(".pi/guides.json cannot define both 'profile' and 'guides'");
+        }
+        return resolveProfileSource(config, profiles);
+    }
+
+    if (config.guides === undefined) {
+        throw new Error(".pi/guides.json must define either 'profile' or 'guides'");
+    }
+
+    return resolveDirectGuideSource(config);
+}
+
+function buildPrecedenceRanks(registry: GuideRegistry): Map<PrecedenceId, number> {
+    return new Map(registry.precedence.map((entry) => [entry.id, entry.rank]));
+}
+
+async function resolveGuideEntry(
+    id: string,
+    index: number,
+    mode: GuideMode,
+    variantOverrides: Record<string, string> | undefined,
+    registry: GuideRegistry,
+    precedenceRanks: Map<PrecedenceId, number>,
+): Promise<{ index: number; guide: ResolvedGuide }> {
+    const guide = registry.guides[id];
+    if (!guide) {
+        throw new Error(`Unknown guide id '${id}'`);
+    }
+
+    const precedenceRank = precedenceRanks.get(guide.precedence);
+    if (precedenceRank === undefined) {
+        throw new Error(`Missing precedence rank for guide '${id}'`);
+    }
+
+    const variant = pickVariant(guide, mode, variantOverrides?.[id]);
+    const variantRecord = guide.variants[variant];
+    const absolutePath = resolve(PACKAGE_ROOT, variantRecord.path);
+    await ensureExistingPath(absolutePath, `Guide file for '${id}'`);
+
+    return {
+        index,
+        guide: {
+            id,
+            title: guide.title,
+            precedence: guide.precedence,
+            precedenceRank,
+            variant,
+            relativePath: variantRecord.path,
+            absolutePath,
+            summary: guide.summary,
+        },
+    };
+}
+
+async function resolveGuides(
+    source: ResolvedSource,
+    variantOverrides: Record<string, string> | undefined,
+    registry: GuideRegistry,
+): Promise<ResolvedGuide[]> {
+    const precedenceRanks = buildPrecedenceRanks(registry);
+    const guidesWithIndex = await Promise.all(
+        source.ids.map((id, index) => {
+            return resolveGuideEntry(id, index, source.mode, variantOverrides, registry, precedenceRanks);
+        }),
+    );
+
+    guidesWithIndex.sort((a, b) => {
+        if (a.guide.precedenceRank !== b.guide.precedenceRank) {
+            return a.guide.precedenceRank - b.guide.precedenceRank;
+        }
+        return a.index - b.index;
+    });
+
+    return guidesWithIndex.map((entry) => entry.guide);
+}
+
+async function resolveActiveState(
+    configPath: string,
+    config: GuideConfig,
+    registry: GuideRegistry,
+    profiles: ProfileRegistry,
+): Promise<ResolvedActiveState> {
+    const source = resolveSourceIds(config, profiles);
+    const guides = await resolveGuides(source, config.variants, registry);
+    return {
+        active: true,
+        configPath,
+        profile: source.profile,
+        profileTitle: source.profileTitle,
+        mode: source.mode,
+        guides,
+    };
 }
 
 async function resolveState(cwd: string): Promise<ResolvedState> {
-	const configPath = resolve(cwd, GUIDE_CONFIG_RELATIVE_PATH);
-	if (!(await fileExists(configPath))) {
-		return {
-			active: false,
-			status: "guides: off",
-			reason: `No ${GUIDE_CONFIG_RELATIVE_PATH} found`,
-			configPath,
-		};
-	}
+    const configPath = resolve(cwd, GUIDE_CONFIG_RELATIVE_PATH);
+    const configPathState = await getPathState(configPath);
+    if (configPathState.kind === "missing") {
+        return makeOffState(configPath);
+    }
+    if (configPathState.kind === "error") {
+        return makeErrorState(configPath, configPathState.errorMessage);
+    }
 
-	try {
-		const [registry, profiles, config] = await Promise.all([
-			loadRegistry(),
-			loadProfiles(),
-			readJsonFile<GuideConfig>(configPath),
-		]);
+    try {
+        const [registry, profiles, config] = await Promise.all([
+            loadRegistry(),
+            loadProfiles(),
+            readJsonFile<GuideConfig>(configPath),
+        ]);
 
-		if (config.version !== 1) {
-			throw new Error(`Unsupported guides config version '${String(config.version)}'`);
-		}
+        if (config.version !== 1) {
+            throw new Error(`Unsupported guides config version '${String(config.version)}'`);
+        }
 
-		const source = resolveSourceIds(config, profiles);
-		const precedenceRanks = new Map(registry.precedence.map((entry) => [entry.id, entry.rank]));
-		const guides = await Promise.all(
-			source.ids.map(async (id, index) => {
-				const guide = registry.guides[id];
-				if (!guide) {
-					throw new Error(`Unknown guide id '${id}'`);
-				}
-
-				const variant = pickVariant(guide, source.mode, config.variants?.[id]);
-				const variantRecord = guide.variants[variant];
-				const absolutePath = resolve(PACKAGE_ROOT, variantRecord.path);
-				if (!(await fileExists(absolutePath))) {
-					throw new Error(`Guide file does not exist: ${variantRecord.path}`);
-				}
-
-				return {
-					index,
-					guide: {
-						id,
-						title: guide.title,
-						precedence: guide.precedence,
-						precedenceRank: precedenceRanks.get(guide.precedence) ?? Number.MAX_SAFE_INTEGER,
-						variant,
-						relativePath: variantRecord.path,
-						absolutePath,
-						summary: guide.summary,
-					},
-				};
-			}),
-		);
-
-		guides.sort((a, b) => {
-			if (a.guide.precedenceRank !== b.guide.precedenceRank) {
-				return a.guide.precedenceRank - b.guide.precedenceRank;
-			}
-			return a.index - b.index;
-		});
-
-		const resolved: ResolvedState = {
-			active: true,
-			status: "",
-			configPath,
-			profile: source.profile,
-			profileTitle: source.profileTitle,
-			mode: source.mode,
-			guides: guides.map((entry) => entry.guide),
-		};
-		resolved.status = renderStatus(resolved);
-		return resolved;
-	} catch (error) {
-		return {
-			active: false,
-			status: "guides: error",
-			reason: error instanceof Error ? error.message : String(error),
-			configPath,
-		};
-	}
+        return await resolveActiveState(configPath, config, registry, profiles);
+    } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error);
+        return makeErrorState(configPath, reason);
+    }
 }
 
-async function buildInjectedPrompt(state: Extract<ResolvedState, { active: true }>, registry: GuideRegistry): Promise<string> {
-	const contents = await Promise.all(
-		state.guides.map(async (guide) => ({
-			guide,
-			content: await readFile(guide.absolutePath, "utf8"),
-		})),
-	);
+async function readGuideContents(guides: ResolvedGuide[]): Promise<LoadedGuideContent[]> {
+    return Promise.all(
+        guides.map(async (guide) => {
+            return {
+                guide,
+                content: await readFile(guide.absolutePath, "utf8"),
+            };
+        }),
+    );
+}
 
-	const precedence = registry.precedence
-		.slice()
-		.sort((a, b) => a.rank - b.rank)
-		.map((entry) => entry.id)
-		.join(" > ");
+function formatPrecedence(registry: GuideRegistry): string {
+    return registry.precedence
+        .slice()
+        .sort((a, b) => a.rank - b.rank)
+        .map((entry) => entry.id)
+        .join(" > ");
+}
 
-	const guideList = state.guides
-		.map((guide) => `- ${guide.id} (${guide.variant}) -> ${guide.relativePath}`)
-		.join("\n");
+function formatGuideList(guides: ResolvedGuide[]): string {
+    return guides
+        .map((guide) => `- ${guide.id} (${guide.variant}) -> ${guide.relativePath}`)
+        .join("\n");
+}
 
-	const body = contents
-		.map(({ guide, content }) => {
-			return [
-				`### Guide: ${guide.title}`,
-				`- id: ${guide.id}`,
-				`- variant: ${guide.variant}`,
-				`- precedence: ${guide.precedence}`,
-				`- source: ${guide.relativePath}`,
-				"",
-				content.trim(),
-			].join("\n");
-		})
-		.join("\n\n");
+function formatGuideBody(contents: LoadedGuideContent[]): string {
+    return contents
+        .map(({ guide, content }) => {
+            return [
+                `### Guide: ${guide.title}`,
+                `- id: ${guide.id}`,
+                `- variant: ${guide.variant}`,
+                `- precedence: ${guide.precedence}`,
+                `- source: ${guide.relativePath}`,
+                "",
+                content.trim(),
+            ].join("\n");
+        })
+        .join("\n\n");
+}
 
-	return [
-		"## Active Guide System",
-		"",
-		`Profile: ${state.profile ?? "custom"}`,
-		`Mode: ${state.mode}`,
-		`Precedence: ${precedence}`,
-		"",
-		"Apply the active guides below as binding policy for this turn.",
-		"When doing implementation work, explicitly verify negative, error, and boundary paths, not only happy paths.",
-		"In final summaries, prefer concise rule-application traces that reference the relevant guide ids or rule ids.",
-		"",
-		"### Active Guides",
-		guideList,
-		"",
-		body,
-	].join("\n");
+async function buildInjectedPrompt(state: ResolvedActiveState, registry: GuideRegistry): Promise<string> {
+    const contents = await readGuideContents(state.guides);
+    const precedence = formatPrecedence(registry);
+    const guideList = formatGuideList(state.guides);
+    const body = formatGuideBody(contents);
+
+    return [
+        "## Active Guide System",
+        "",
+        `Profile: ${state.profile ?? "custom"}`,
+        `Mode: ${state.mode}`,
+        `Precedence: ${precedence}`,
+        "",
+        "Apply the active guides below as binding policy for this turn.",
+        "When doing implementation work, explicitly verify negative, error, and boundary paths, not only happy paths.",
+        "In final summaries, prefer concise rule-application traces that reference the relevant guide ids or rule ids.",
+        "",
+        "### Active Guides",
+        guideList,
+        "",
+        body,
+    ].join("\n");
+}
+
+function statusNotifyLevel(state: ResolvedState): NotifyLevel {
+    if (state.active) {
+        return "info";
+    }
+    if (state.inactiveKind === "error") {
+        return "warning";
+    }
+    return "info";
 }
 
 function setStatus(ctx: ExtensionContext, state: ResolvedState): void {
-	ctx.ui.setStatus(GUIDE_STATUS_KEY, renderStatus(state));
+    ctx.ui.setStatus(GUIDE_STATUS_KEY, renderStatus(state));
 }
 
 function clearUi(ctx: ExtensionContext): void {
-	ctx.ui.setStatus(GUIDE_STATUS_KEY, undefined);
-	ctx.ui.setWidget(GUIDE_WIDGET_KEY, undefined);
+    ctx.ui.setStatus(GUIDE_STATUS_KEY, undefined);
+    ctx.ui.setWidget(GUIDE_WIDGET_KEY, undefined);
 }
 
 async function refreshStatus(ctx: ExtensionContext): Promise<ResolvedState> {
-	const state = await resolveState(ctx.cwd);
-	setStatus(ctx, state);
-	return state;
+    const state = await resolveState(ctx.cwd);
+    setStatus(ctx, state);
+    return state;
 }
 
 function widgetLines(state: ResolvedState): string[] {
-	if (!state.active) {
-		return [
-			"pi guides",
-			`status: ${state.status}`,
-			`reason: ${state.reason}`,
-			`config: ${state.configPath}`,
-		];
-	}
+    if (!state.active) {
+        return [
+            "pi guides",
+            `status: ${renderStatus(state)}`,
+            `reason: ${state.reason}`,
+            `config: ${state.configPath}`,
+        ];
+    }
 
-	const lines = [
-		"pi guides",
-		`status: ${state.status}`,
-		`config: ${state.configPath}`,
-		`profile: ${state.profile ?? "custom"}${state.profileTitle ? ` (${state.profileTitle})` : ""}`,
-		`mode: ${state.mode}`,
-		"active:",
-	];
-	for (const guide of state.guides) {
-		lines.push(`- ${guide.id} (${guide.variant}) -> ${guide.relativePath}`);
-	}
-	return lines;
+    const lines = [
+        "pi guides",
+        `status: ${renderStatus(state)}`,
+        `config: ${state.configPath}`,
+        `profile: ${state.profile ?? "custom"}${state.profileTitle ? ` (${state.profileTitle})` : ""}`,
+        `mode: ${state.mode}`,
+        "active:",
+    ];
+    for (const guide of state.guides) {
+        lines.push(`- ${guide.id} (${guide.variant}) -> ${guide.relativePath}`);
+    }
+    return lines;
 }
 
 async function ensureParentDir(path: string): Promise<void> {
-	await mkdir(dirname(path), { recursive: true });
+    await mkdir(dirname(path), { recursive: true });
 }
 
-async function syncAgentsFile(cwd: string): Promise<"created" | "updated" | "skipped"> {
-	const targetPath = resolve(cwd, "AGENTS.md");
-	const template = await readFile(TEMPLATE_AGENTS_PATH, "utf8");
+function markerCount(text: string, marker: string): number {
+    return text.split(marker).length - 1;
+}
 
-	if (!(await fileExists(targetPath))) {
-		await writeFile(targetPath, template, "utf8");
-		return "created";
-	}
+function extractManagedHeader(text: string): string | null {
+    const beginCount = markerCount(text, BEGIN_HEADER);
+    if (beginCount !== 1) {
+        return null;
+    }
 
-	const current = await readFile(targetPath, "utf8");
-	const beginCount = current.split(BEGIN_HEADER).length - 1;
-	const endCount = current.split(END_HEADER).length - 1;
-	if (beginCount !== 1 || endCount !== 1) {
-		return "skipped";
-	}
+    const endCount = markerCount(text, END_HEADER);
+    if (endCount !== 1) {
+        return null;
+    }
 
-	const templateStart = template.indexOf(BEGIN_HEADER);
-	const templateEnd = template.indexOf(END_HEADER);
-	const targetStart = current.indexOf(BEGIN_HEADER);
-	const targetEnd = current.indexOf(END_HEADER);
-	if (templateStart < 0 || templateEnd < 0 || targetStart < 0 || targetEnd < 0) {
-		return "skipped";
-	}
+    const start = text.indexOf(BEGIN_HEADER);
+    if (start < 0) {
+        return null;
+    }
 
-	const templateHeader = template.slice(templateStart, templateEnd + END_HEADER.length);
-	const updated = current.slice(0, targetStart) + templateHeader + current.slice(targetEnd + END_HEADER.length);
-	if (updated === current) {
-		return "updated";
-	}
+    const end = text.indexOf(END_HEADER);
+    if (end < 0) {
+        return null;
+    }
+    if (end < start) {
+        return null;
+    }
 
-	await writeFile(targetPath, updated, "utf8");
-	return "updated";
+    return text.slice(start, end + END_HEADER.length);
+}
+
+async function syncAgentsFile(cwd: string): Promise<SyncAgentsResult> {
+    const targetPath = resolve(cwd, "AGENTS.md");
+    const template = await readFile(TEMPLATE_AGENTS_PATH, "utf8");
+
+    if (!(await fileExists(targetPath))) {
+        await writeFile(targetPath, template, "utf8");
+        return "created";
+    }
+
+    const current = await readFile(targetPath, "utf8");
+    const templateHeader = extractManagedHeader(template);
+    if (templateHeader === null) {
+        return "skipped";
+    }
+
+    const currentHeader = extractManagedHeader(current);
+    if (currentHeader === null) {
+        return "skipped";
+    }
+
+    if (currentHeader === templateHeader) {
+        return "unchanged";
+    }
+
+    const updated = current.replace(currentHeader, templateHeader);
+    await writeFile(targetPath, updated, "utf8");
+    return "updated";
 }
 
 async function runGuideInit(ctx: ExtensionCommandContext): Promise<void> {
-	const configPath = resolve(ctx.cwd, GUIDE_CONFIG_RELATIVE_PATH);
-	const agentsPath = resolve(ctx.cwd, "AGENTS.md");
-	let created = 0;
+    const configPath = resolve(ctx.cwd, GUIDE_CONFIG_RELATIVE_PATH);
+    const agentsPath = resolve(ctx.cwd, "AGENTS.md");
+    let created = 0;
 
-	if (!(await fileExists(configPath))) {
-		await ensureParentDir(configPath);
-		await writeFile(configPath, await readFile(TEMPLATE_GUIDES_PATH, "utf8"), "utf8");
-		created += 1;
-	}
+    if (!(await fileExists(configPath))) {
+        await ensureParentDir(configPath);
+        await writeFile(configPath, await readFile(TEMPLATE_GUIDES_PATH, "utf8"), "utf8");
+        created += 1;
+    }
 
-	if (!(await fileExists(agentsPath))) {
-		await writeFile(agentsPath, await readFile(TEMPLATE_AGENTS_PATH, "utf8"), "utf8");
-		created += 1;
-	}
+    if (!(await fileExists(agentsPath))) {
+        await writeFile(agentsPath, await readFile(TEMPLATE_AGENTS_PATH, "utf8"), "utf8");
+        created += 1;
+    }
 
-	if (created === 0) {
-		ctx.ui.notify("guide-init: nothing created; files already exist", "info");
-		return;
-	}
+    if (created === 0) {
+        ctx.ui.notify("guide-init: nothing created; files already exist", "info");
+        return;
+    }
 
-	ctx.ui.notify("guide-init: wrote repo guide files; reloading runtime", "success");
-	await ctx.reload();
+    ctx.ui.notify("guide-init: wrote repo guide files; reloading runtime", "success");
+    await ctx.reload();
 }
 
 async function runGuideSync(ctx: ExtensionCommandContext): Promise<void> {
-	const result = await syncAgentsFile(ctx.cwd);
-	if (result === "skipped") {
-		ctx.ui.notify("guide-sync: AGENTS.md exists but does not contain the managed header block", "warning");
-		return;
-	}
+    const result = await syncAgentsFile(ctx.cwd);
+    if (result === "skipped") {
+        ctx.ui.notify(
+            "guide-sync: AGENTS.md exists but does not contain the managed header block",
+            "warning",
+        );
+        return;
+    }
+    if (result === "unchanged") {
+        ctx.ui.notify("guide-sync: AGENTS.md already matches the package template", "info");
+        return;
+    }
 
-	ctx.ui.notify(`guide-sync: ${result} AGENTS.md; reloading runtime`, "success");
-	await ctx.reload();
+    ctx.ui.notify(`guide-sync: ${result} AGENTS.md; reloading runtime`, "success");
+    await ctx.reload();
+}
+
+function notifyGuidesState(ctx: ExtensionContext, state: ResolvedState): void {
+    ctx.ui.notify(renderStatus(state), statusNotifyLevel(state));
+    if (state.active) {
+        return;
+    }
+    if (state.inactiveKind !== "error") {
+        return;
+    }
+    ctx.ui.notify(`pi guides: ${state.reason}`, "warning");
 }
 
 export default function guideSystemExtension(pi: ExtensionAPI) {
-	pi.registerCommand("guides", {
-		description: "Show resolved pi guide state for this repository",
-		handler: async (_args, ctx) => {
-			const state = await refreshStatus(ctx);
-			ctx.ui.setWidget(GUIDE_WIDGET_KEY, widgetLines(state));
-			ctx.ui.notify(renderStatus(state), state.active ? "info" : "warning");
-		},
-	});
+    pi.registerCommand("guides", {
+        description: "Show resolved pi guide state for this repository",
+        handler: async (_args, ctx) => {
+            const state = await refreshStatus(ctx);
+            ctx.ui.setWidget(GUIDE_WIDGET_KEY, widgetLines(state));
+            notifyGuidesState(ctx, state);
+        },
+    });
 
-	pi.registerCommand("guide-init", {
-		description: "Initialize .pi/guides.json and repo AGENTS.md from package templates",
-		handler: async (_args, ctx) => {
-			await runGuideInit(ctx);
-		},
-	});
+    pi.registerCommand("guide-init", {
+        description: "Initialize .pi/guides.json and repo AGENTS.md from package templates",
+        handler: async (_args, ctx) => {
+            await runGuideInit(ctx);
+        },
+    });
 
-	pi.registerCommand("guide-sync", {
-		description: "Refresh the managed header block in repo AGENTS.md from the package template",
-		handler: async (_args, ctx) => {
-			await runGuideSync(ctx);
-		},
-	});
+    pi.registerCommand("guide-sync", {
+        description: "Refresh the managed header block in repo AGENTS.md from the package template",
+        handler: async (_args, ctx) => {
+            await runGuideSync(ctx);
+        },
+    });
 
-	pi.on("session_start", async (_event, ctx) => {
-		const state = await refreshStatus(ctx);
-		if (!state.active && state.status === "guides: error") {
-			ctx.ui.notify(`pi guides: ${state.reason}`, "warning");
-		}
-	});
+    pi.on("session_start", async (_event, ctx) => {
+        const state = await refreshStatus(ctx);
+        if (state.active) {
+            return;
+        }
+        if (state.inactiveKind !== "error") {
+            return;
+        }
+        ctx.ui.notify(`pi guides: ${state.reason}`, "warning");
+    });
 
-	pi.on("before_agent_start", async (event, ctx) => {
-		const state = await refreshStatus(ctx);
-		if (!state.active) {
-			return;
-		}
+    pi.on("before_agent_start", async (event, ctx) => {
+        const state = await refreshStatus(ctx);
+        if (!state.active) {
+            return;
+        }
 
-		const registry = await loadRegistry();
-		const injectedPrompt = await buildInjectedPrompt(state, registry);
-		return {
-			systemPrompt: `${event.systemPrompt}\n\n${injectedPrompt}`,
-		};
-	});
+        const registry = await loadRegistry();
+        const injectedPrompt = await buildInjectedPrompt(state, registry);
+        return {
+            systemPrompt: `${event.systemPrompt}\n\n${injectedPrompt}`,
+        };
+    });
 
-	pi.on("session_shutdown", async (_event, ctx) => {
-		clearUi(ctx);
-	});
+    pi.on("session_shutdown", async (_event, ctx) => {
+        clearUi(ctx);
+    });
 }

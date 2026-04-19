@@ -23,6 +23,7 @@
     "validate-pi-guides": "./bin/validate-pi-guides"
   },
   "scripts": {
+    "test": "node --test",
     "validate": "./bin/validate-pi-guides"
   },
   "peerDependencies": {

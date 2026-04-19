@@ -1,101 +1,744 @@
 #!/usr/bin/env node
+// @ts-check
 
-import { readFileSync, existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import process from "node:process";
 
-const root = process.cwd();
-const errors = [];
+const BEGIN_GUIDE_HEADER = "<!-- BEGIN MANAGED GUIDE HEADER -->";
+const END_GUIDE_HEADER = "<!-- END MANAGED GUIDE HEADER -->";
+const GUIDE_MODE_COMPACT = "compact";
+const GUIDE_MODE_FULL = "full";
+const SUCCESS_MESSAGE = "pi-guides validation passed";
+const GUIDE_SYSTEM_EXTENSION_PATH = "./extensions/guide-system.ts";
+const GUIDE_REVIEW_PROMPT_PATH = "./prompts/guide-review.md";
+const ROOT_PACKAGE_SOURCE = "..";
 
-function readJson(path) {
-  try {
-    return JSON.parse(readFileSync(path, "utf8"));
-  } catch (error) {
-    errors.push(`${path}: ${error instanceof Error ? error.message : String(error)}`);
-    return null;
-  }
+/**
+ * @typedef {{
+ *   packageJsonPath: string,
+ *   guidesRegistryPath: string,
+ *   profilesRegistryPath: string,
+ *   repoTemplatePath: string,
+ *   extensionPath: string,
+ *   guideReviewPromptPath: string,
+ *   guidesSchemaPath: string,
+ *   profilesSchemaPath: string,
+ *   guidesExamplePath: string,
+ *   settingsExamplePath: string,
+ *   repoGuideConfigPath: string,
+ *   repoSettingsPath: string,
+ * }} RepoPaths
+ */
+
+/**
+ * @typedef {{
+ *   title?: unknown,
+ *   precedence?: unknown,
+ *   summary?: unknown,
+ *   defaults?: unknown,
+ *   variants?: unknown,
+ * }} GuideRecord
+ */
+
+/**
+ * @typedef {{
+ *   title?: unknown,
+ *   description?: unknown,
+ *   guides?: unknown,
+ *   mode?: unknown,
+ * }} ProfileRecord
+ */
+
+/**
+ * @typedef {{
+ *   version?: unknown,
+ *   profile?: unknown,
+ *   guides?: unknown,
+ *   mode?: unknown,
+ *   additions?: unknown,
+ *   removals?: unknown,
+ *   variants?: unknown,
+ * }} GuideConfig
+ */
+
+function build_paths(root_directory_path) {
+    return {
+        packageJsonPath: resolve(root_directory_path, "package.json"),
+        guidesRegistryPath: resolve(root_directory_path, "registry", "guides.json"),
+        profilesRegistryPath: resolve(root_directory_path, "registry", "profiles.json"),
+        repoTemplatePath: resolve(root_directory_path, "templates", "repo-AGENTS.md"),
+        extensionPath: resolve(root_directory_path, "extensions", "guide-system.ts"),
+        guideReviewPromptPath: resolve(root_directory_path, "prompts", "guide-review.md"),
+        guidesSchemaPath: resolve(root_directory_path, "schemas", "guides.schema.json"),
+        profilesSchemaPath: resolve(root_directory_path, "schemas", "profiles.schema.json"),
+        guidesExamplePath: resolve(root_directory_path, "templates", "guides.json.example"),
+        settingsExamplePath: resolve(root_directory_path, "templates", "settings.json.example"),
+        repoGuideConfigPath: resolve(root_directory_path, ".pi", "guides.json"),
+        repoSettingsPath: resolve(root_directory_path, ".pi", "settings.json"),
+    };
 }
 
-function assert(condition, message) {
-  if (!condition) {
-    errors.push(message);
-  }
+function push_error(validation_errors, message) {
+    validation_errors.push(message);
 }
 
-const packageJsonPath = resolve(root, "package.json");
-const guidesPath = resolve(root, "registry", "guides.json");
-const profilesPath = resolve(root, "registry", "profiles.json");
-const templatePath = resolve(root, "templates", "repo-AGENTS.md");
-const extensionPath = resolve(root, "extensions", "guide-system.ts");
-const promptPath = resolve(root, "prompts", "guide-review.md");
-
-assert(existsSync(packageJsonPath), "Missing package.json");
-assert(existsSync(guidesPath), "Missing registry/guides.json");
-assert(existsSync(profilesPath), "Missing registry/profiles.json");
-assert(existsSync(templatePath), "Missing templates/repo-AGENTS.md");
-assert(existsSync(extensionPath), "Missing extensions/guide-system.ts");
-assert(existsSync(promptPath), "Missing prompts/guide-review.md");
-
-const packageJson = existsSync(packageJsonPath) ? readJson(packageJsonPath) : null;
-const guides = existsSync(guidesPath) ? readJson(guidesPath) : null;
-const profiles = existsSync(profilesPath) ? readJson(profilesPath) : null;
-
-if (packageJson) {
-  assert(Array.isArray(packageJson.keywords) && packageJson.keywords.includes("pi-package"), "package.json must include keyword 'pi-package'");
-  assert(packageJson.pi?.extensions?.includes("./extensions/guide-system.ts"), "package.json pi.extensions must include ./extensions/guide-system.ts");
+function is_plain_object(value) {
+    if (typeof value !== "object") {
+        return false;
+    }
+    if (value === null) {
+        return false;
+    }
+    if (Array.isArray(value)) {
+        return false;
+    }
+    return true;
 }
 
-if (guides) {
-  assert(guides.version === 1, "registry/guides.json must declare version 1");
-  assert(Array.isArray(guides.precedence) && guides.precedence.length > 0, "registry/guides.json must define precedence tiers");
-  assert(guides.guides && typeof guides.guides === "object", "registry/guides.json must define guides");
+function validate_non_empty_string(value, label, validation_errors) {
+    if (typeof value !== "string") {
+        push_error(validation_errors, `${label} must be a string`);
+        return;
+    }
+    if (value.length === 0) {
+        push_error(validation_errors, `${label} must be non-empty`);
+    }
+}
 
-  for (const [guideId, guide] of Object.entries(guides.guides ?? {})) {
-    assert(typeof guide.title === "string" && guide.title.length > 0, `Guide '${guideId}' must define title`);
-    assert(typeof guide.defaults?.compact === "string", `Guide '${guideId}' must define defaults.compact`);
-    assert(typeof guide.defaults?.full === "string", `Guide '${guideId}' must define defaults.full`);
-
-    for (const [variantId, variant] of Object.entries(guide.variants ?? {})) {
-      const variantPath = resolve(root, variant.path);
-      assert(existsSync(variantPath), `Guide '${guideId}' variant '${variantId}' points to missing file '${variant.path}'`);
-      assert(variant.size === "compact" || variant.size === "full", `Guide '${guideId}' variant '${variantId}' has invalid size`);
+function validate_string_array(values, label, validation_errors) {
+    if (!Array.isArray(values)) {
+        push_error(validation_errors, `${label} must be an array`);
+        return;
     }
 
-    if (guide.defaults?.compact) {
-      assert(Boolean(guide.variants?.[guide.defaults.compact]), `Guide '${guideId}' defaults.compact must reference an existing variant`);
+    for (let index = 0; index < values.length; index += 1) {
+        validate_non_empty_string(values[index], `${label}[${String(index)}]`, validation_errors);
     }
-    if (guide.defaults?.full) {
-      assert(Boolean(guide.variants?.[guide.defaults.full]), `Guide '${guideId}' defaults.full must reference an existing variant`);
+}
+
+function validate_unique_string_array(values, label, validation_errors) {
+    validate_string_array(values, label, validation_errors);
+    if (!Array.isArray(values)) {
+        return;
     }
-  }
-}
 
-if (profiles && guides) {
-  assert(profiles.version === 1, "registry/profiles.json must declare version 1");
-  assert(profiles.profiles && typeof profiles.profiles === "object", "registry/profiles.json must define profiles");
-
-  for (const [profileId, profile] of Object.entries(profiles.profiles ?? {})) {
-    assert(Array.isArray(profile.guides) && profile.guides.length > 0, `Profile '${profileId}' must define at least one guide`);
-    for (const guideId of profile.guides ?? []) {
-      assert(Boolean(guides.guides?.[guideId]), `Profile '${profileId}' references unknown guide '${guideId}'`);
+    const seen_values = new Set();
+    for (let index = 0; index < values.length; index += 1) {
+        const value = values[index];
+        if (typeof value !== "string") {
+            continue;
+        }
+        if (seen_values.has(value)) {
+            push_error(validation_errors, `${label}[${String(index)}] must be unique`);
+            continue;
+        }
+        seen_values.add(value);
     }
-  }
 }
 
-if (existsSync(templatePath)) {
-  const template = readFileSync(templatePath, "utf8");
-  const beginCount = template.split("<!-- BEGIN MANAGED GUIDE HEADER -->").length - 1;
-  const endCount = template.split("<!-- END MANAGED GUIDE HEADER -->").length - 1;
-  assert(beginCount === 1, "templates/repo-AGENTS.md must contain exactly one BEGIN MANAGED GUIDE HEADER marker");
-  assert(endCount === 1, "templates/repo-AGENTS.md must contain exactly one END MANAGED GUIDE HEADER marker");
+function validate_guide_mode(value, label, validation_errors) {
+    validate_non_empty_string(value, label, validation_errors);
+    if (typeof value !== "string") {
+        return;
+    }
+    if (value !== GUIDE_MODE_COMPACT && value !== GUIDE_MODE_FULL) {
+        push_error(validation_errors, `${label} must be '${GUIDE_MODE_COMPACT}' or '${GUIDE_MODE_FULL}'`);
+    }
 }
 
-if (errors.length > 0) {
-  console.error("pi-guides validation failed:\n");
-  for (const error of errors) {
-    console.error(`- ${error}`);
-  }
-  process.exit(1);
+function read_json_file(file_path, validation_errors) {
+    validate_non_empty_string(file_path, "file path", validation_errors);
+    if (file_path.length === 0) {
+        return null;
+    }
+
+    try {
+        const json_text = readFileSync(file_path, "utf8");
+        return JSON.parse(json_text);
+    } catch (error) {
+        const error_message = error instanceof Error ? error.message : String(error);
+        push_error(validation_errors, `${file_path}: ${error_message}`);
+        return null;
+    }
 }
 
-console.log("pi-guides validation passed");
+function validate_required_files(paths, validation_errors) {
+    const required_file_specs = [
+        [paths.packageJsonPath, "package.json"],
+        [paths.guidesRegistryPath, "registry/guides.json"],
+        [paths.profilesRegistryPath, "registry/profiles.json"],
+        [paths.repoTemplatePath, "templates/repo-AGENTS.md"],
+        [paths.extensionPath, "extensions/guide-system.ts"],
+        [paths.guideReviewPromptPath, "prompts/guide-review.md"],
+        [paths.guidesSchemaPath, "schemas/guides.schema.json"],
+        [paths.profilesSchemaPath, "schemas/profiles.schema.json"],
+        [paths.guidesExamplePath, "templates/guides.json.example"],
+        [paths.settingsExamplePath, "templates/settings.json.example"],
+        [paths.repoGuideConfigPath, ".pi/guides.json"],
+        [paths.repoSettingsPath, ".pi/settings.json"],
+    ];
+
+    /** @type {Map<string, boolean>} */
+    const file_exists_by_path = new Map();
+
+    for (const [file_path, label] of required_file_specs) {
+        const file_exists = existsSync(file_path);
+        file_exists_by_path.set(file_path, file_exists);
+        if (!file_exists) {
+            push_error(validation_errors, `Missing ${label}`);
+        }
+    }
+
+    return file_exists_by_path;
+}
+
+function validate_package_manifest_paths(package_json, root_directory_path, validation_errors) {
+    if (!Array.isArray(package_json.files)) {
+        push_error(validation_errors, "package.json files must be an array");
+        return;
+    }
+
+    const required_package_entries = [
+        "extensions",
+        "files",
+        "registry",
+        "templates",
+        "schemas",
+        "prompts",
+        "bin",
+        "README.md",
+    ];
+
+    for (const entry of required_package_entries) {
+        if (!package_json.files.includes(entry)) {
+            push_error(validation_errors, `package.json files must include '${entry}'`);
+        }
+        if (!existsSync(resolve(root_directory_path, entry))) {
+            push_error(validation_errors, `package.json files entry '${entry}' does not exist`);
+        }
+    }
+}
+
+function validate_package_json(package_json, root_directory_path, validation_errors) {
+    if (!is_plain_object(package_json)) {
+        push_error(validation_errors, "package.json must contain a JSON object");
+        return;
+    }
+
+    validate_unique_string_array(package_json.keywords, "package.json keywords", validation_errors);
+    if (Array.isArray(package_json.keywords)) {
+        if (!package_json.keywords.includes("pi-package")) {
+            push_error(validation_errors, "package.json must include keyword 'pi-package'");
+        }
+    }
+
+    validate_package_manifest_paths(package_json, root_directory_path, validation_errors);
+
+    if (!is_plain_object(package_json.pi)) {
+        push_error(validation_errors, "package.json must define a pi object");
+        return;
+    }
+
+    validate_unique_string_array(
+        package_json.pi.extensions,
+        "package.json pi.extensions",
+        validation_errors,
+    );
+    if (Array.isArray(package_json.pi.extensions)) {
+        if (!package_json.pi.extensions.includes(GUIDE_SYSTEM_EXTENSION_PATH)) {
+            push_error(
+                validation_errors,
+                `package.json pi.extensions must include ${GUIDE_SYSTEM_EXTENSION_PATH}`,
+            );
+        }
+    }
+
+    validate_unique_string_array(
+        package_json.pi.prompts,
+        "package.json pi.prompts",
+        validation_errors,
+    );
+    if (Array.isArray(package_json.pi.prompts)) {
+        if (!package_json.pi.prompts.includes("./prompts/*.md")) {
+            push_error(validation_errors, "package.json pi.prompts must include ./prompts/*.md");
+        }
+    }
+}
+
+function validate_precedence_entries(precedence_entries, validation_errors) {
+    const precedence_ids = new Set();
+    const precedence_ranks = new Set();
+
+    if (!Array.isArray(precedence_entries)) {
+        push_error(validation_errors, "registry/guides.json precedence must be an array");
+        return precedence_ids;
+    }
+    if (precedence_entries.length === 0) {
+        push_error(validation_errors, "registry/guides.json must define precedence tiers");
+        return precedence_ids;
+    }
+
+    for (let index = 0; index < precedence_entries.length; index += 1) {
+        const precedence_entry = precedence_entries[index];
+        const label = `registry/guides.json precedence[${String(index)}]`;
+
+        if (!is_plain_object(precedence_entry)) {
+            push_error(validation_errors, `${label} must be an object`);
+            continue;
+        }
+
+        validate_non_empty_string(precedence_entry.id, `${label}.id`, validation_errors);
+        if (typeof precedence_entry.rank !== "number") {
+            push_error(validation_errors, `${label}.rank must be a number`);
+        } else if (!Number.isInteger(precedence_entry.rank)) {
+            push_error(validation_errors, `${label}.rank must be an integer`);
+        } else if (precedence_entry.rank <= 0) {
+            push_error(validation_errors, `${label}.rank must be positive`);
+        }
+
+        if (typeof precedence_entry.id === "string") {
+            if (precedence_ids.has(precedence_entry.id)) {
+                push_error(
+                    validation_errors,
+                    `registry/guides.json precedence id '${precedence_entry.id}' must be unique`,
+                );
+            }
+            precedence_ids.add(precedence_entry.id);
+        }
+
+        if (Number.isInteger(precedence_entry.rank)) {
+            if (precedence_ranks.has(precedence_entry.rank)) {
+                push_error(
+                    validation_errors,
+                    `registry/guides.json precedence rank '${String(precedence_entry.rank)}' must be unique`,
+                );
+            }
+            precedence_ranks.add(precedence_entry.rank);
+        }
+    }
+
+    return precedence_ids;
+}
+
+function validate_variant_record(root_directory_path, guide_id, variant_id, variant_record, validation_errors) {
+    const label = `Guide '${guide_id}' variant '${variant_id}'`;
+
+    if (!is_plain_object(variant_record)) {
+        push_error(validation_errors, `${label} must be an object`);
+        return;
+    }
+
+    validate_non_empty_string(variant_record.path, `${label}.path`, validation_errors);
+    validate_guide_mode(variant_record.size, `${label}.size`, validation_errors);
+    validate_non_empty_string(variant_record.strictness, `${label}.strictness`, validation_errors);
+
+    if (typeof variant_record.path === "string") {
+        const variant_path = resolve(root_directory_path, variant_record.path);
+        if (!existsSync(variant_path)) {
+            push_error(
+                validation_errors,
+                `${label} points to missing file '${variant_record.path}'`,
+            );
+        }
+    }
+}
+
+function validate_default_variant(guide_id, mode, guide_record, validation_errors) {
+    const label = `Guide '${guide_id}' defaults.${mode}`;
+
+    if (!is_plain_object(guide_record.defaults)) {
+        push_error(validation_errors, `Guide '${guide_id}' must define defaults`);
+        return;
+    }
+    if (!is_plain_object(guide_record.variants)) {
+        push_error(validation_errors, `Guide '${guide_id}' must define variants`);
+        return;
+    }
+
+    const variant_id = guide_record.defaults[mode];
+    validate_non_empty_string(variant_id, label, validation_errors);
+    if (typeof variant_id !== "string") {
+        return;
+    }
+
+    const variant_record = guide_record.variants[variant_id];
+    if (!variant_record) {
+        push_error(validation_errors, `${label} must reference an existing variant`);
+        return;
+    }
+    if (!is_plain_object(variant_record)) {
+        push_error(validation_errors, `${label} must reference a variant object`);
+        return;
+    }
+    if (variant_record.size !== mode) {
+        push_error(validation_errors, `${label} must reference a '${mode}' variant`);
+    }
+}
+
+function validate_guide_record(root_directory_path, guide_id, guide_record, precedence_ids, validation_errors) {
+    if (!is_plain_object(guide_record)) {
+        push_error(validation_errors, `Guide '${guide_id}' must be an object`);
+        return;
+    }
+
+    validate_non_empty_string(guide_record.title, `Guide '${guide_id}'.title`, validation_errors);
+    validate_non_empty_string(guide_record.summary, `Guide '${guide_id}'.summary`, validation_errors);
+    validate_non_empty_string(
+        guide_record.precedence,
+        `Guide '${guide_id}'.precedence`,
+        validation_errors,
+    );
+
+    if (typeof guide_record.precedence === "string") {
+        if (!precedence_ids.has(guide_record.precedence)) {
+            push_error(
+                validation_errors,
+                `Guide '${guide_id}' precedence '${guide_record.precedence}' is not declared`,
+            );
+        }
+    }
+
+    if (!is_plain_object(guide_record.variants)) {
+        push_error(validation_errors, `Guide '${guide_id}' must define variants`);
+        return;
+    }
+
+    const variant_ids = Object.keys(guide_record.variants);
+    if (variant_ids.length === 0) {
+        push_error(validation_errors, `Guide '${guide_id}' must define at least one variant`);
+    }
+
+    for (const [variant_id, variant_record] of Object.entries(guide_record.variants)) {
+        validate_variant_record(
+            root_directory_path,
+            guide_id,
+            variant_id,
+            variant_record,
+            validation_errors,
+        );
+    }
+
+    validate_default_variant(guide_id, GUIDE_MODE_COMPACT, guide_record, validation_errors);
+    validate_default_variant(guide_id, GUIDE_MODE_FULL, guide_record, validation_errors);
+}
+
+function validate_guides_registry(root_directory_path, guides_registry, validation_errors) {
+    if (!is_plain_object(guides_registry)) {
+        push_error(validation_errors, "registry/guides.json must contain a JSON object");
+        return null;
+    }
+    if (guides_registry.version !== 1) {
+        push_error(validation_errors, "registry/guides.json must declare version 1");
+    }
+
+    const precedence_ids = validate_precedence_entries(guides_registry.precedence, validation_errors);
+    if (!is_plain_object(guides_registry.guides)) {
+        push_error(validation_errors, "registry/guides.json must define guides");
+        return null;
+    }
+
+    const guide_ids = new Set(Object.keys(guides_registry.guides));
+    if (guide_ids.size === 0) {
+        push_error(validation_errors, "registry/guides.json must define at least one guide");
+    }
+
+    for (const [guide_id, guide_record] of Object.entries(guides_registry.guides)) {
+        validate_guide_record(
+            root_directory_path,
+            guide_id,
+            guide_record,
+            precedence_ids,
+            validation_errors,
+        );
+    }
+
+    return guide_ids;
+}
+
+function validate_profile_record(profile_id, profile_record, guide_ids, validation_errors) {
+    if (!is_plain_object(profile_record)) {
+        push_error(validation_errors, `Profile '${profile_id}' must be an object`);
+        return;
+    }
+
+    validate_non_empty_string(profile_record.title, `Profile '${profile_id}'.title`, validation_errors);
+    if (profile_record.description !== undefined) {
+        validate_non_empty_string(
+            profile_record.description,
+            `Profile '${profile_id}'.description`,
+            validation_errors,
+        );
+    }
+
+    validate_unique_string_array(profile_record.guides, `Profile '${profile_id}'.guides`, validation_errors);
+    if (Array.isArray(profile_record.guides)) {
+        if (profile_record.guides.length === 0) {
+            push_error(validation_errors, `Profile '${profile_id}' must define at least one guide`);
+        }
+
+        for (const guide_id of profile_record.guides) {
+            if (typeof guide_id !== "string") {
+                continue;
+            }
+            if (guide_ids !== null && !guide_ids.has(guide_id)) {
+                push_error(validation_errors, `Profile '${profile_id}' references unknown guide '${guide_id}'`);
+            }
+        }
+    }
+
+    if (profile_record.mode !== undefined) {
+        validate_guide_mode(profile_record.mode, `Profile '${profile_id}'.mode`, validation_errors);
+    }
+}
+
+function validate_profiles_registry(profiles_registry, guide_ids, validation_errors) {
+    if (!is_plain_object(profiles_registry)) {
+        push_error(validation_errors, "registry/profiles.json must contain a JSON object");
+        return;
+    }
+    if (profiles_registry.version !== 1) {
+        push_error(validation_errors, "registry/profiles.json must declare version 1");
+    }
+    if (!is_plain_object(profiles_registry.profiles)) {
+        push_error(validation_errors, "registry/profiles.json must define profiles");
+        return;
+    }
+
+    const profile_ids = Object.keys(profiles_registry.profiles);
+    if (profile_ids.length === 0) {
+        push_error(validation_errors, "registry/profiles.json must define at least one profile");
+    }
+
+    for (const [profile_id, profile_record] of Object.entries(profiles_registry.profiles)) {
+        validate_profile_record(profile_id, profile_record, guide_ids, validation_errors);
+    }
+}
+
+function validate_template_file(template_path, validation_errors) {
+    let template_text = "";
+
+    try {
+        template_text = readFileSync(template_path, "utf8");
+    } catch (error) {
+        const error_message = error instanceof Error ? error.message : String(error);
+        push_error(validation_errors, `${template_path}: ${error_message}`);
+        return;
+    }
+
+    const begin_count = template_text.split(BEGIN_GUIDE_HEADER).length - 1;
+    const end_count = template_text.split(END_GUIDE_HEADER).length - 1;
+    if (begin_count !== 1) {
+        push_error(
+            validation_errors,
+            "templates/repo-AGENTS.md must contain exactly one BEGIN MANAGED GUIDE HEADER marker",
+        );
+    }
+    if (end_count !== 1) {
+        push_error(
+            validation_errors,
+            "templates/repo-AGENTS.md must contain exactly one END MANAGED GUIDE HEADER marker",
+        );
+    }
+
+    const begin_index = template_text.indexOf(BEGIN_GUIDE_HEADER);
+    const end_index = template_text.indexOf(END_GUIDE_HEADER);
+    if (begin_index >= 0 && end_index >= 0 && begin_index > end_index) {
+        push_error(
+            validation_errors,
+            "templates/repo-AGENTS.md must place the BEGIN marker before the END marker",
+        );
+    }
+}
+
+function validate_repo_settings(repo_settings, validation_errors) {
+    if (!is_plain_object(repo_settings)) {
+        push_error(validation_errors, ".pi/settings.json must contain a JSON object");
+        return;
+    }
+
+    validate_unique_string_array(repo_settings.packages, ".pi/settings.json packages", validation_errors);
+    if (!Array.isArray(repo_settings.packages)) {
+        return;
+    }
+    if (repo_settings.packages.length === 0) {
+        push_error(validation_errors, ".pi/settings.json packages must not be empty");
+        return;
+    }
+    if (!repo_settings.packages.includes(ROOT_PACKAGE_SOURCE)) {
+        push_error(validation_errors, ".pi/settings.json packages must include '..' for local dogfooding");
+    }
+}
+
+function validate_variant_overrides(variant_overrides, guides_registry, validation_errors) {
+    if (!is_plain_object(variant_overrides)) {
+        push_error(validation_errors, ".pi/guides.json variants must be an object");
+        return;
+    }
+
+    for (const [guide_id, variant_id] of Object.entries(variant_overrides)) {
+        validate_non_empty_string(variant_id, `.pi/guides.json variants.${guide_id}`, validation_errors);
+        const guide_record = guides_registry.guides[guide_id];
+        if (!guide_record) {
+            push_error(validation_errors, `.pi/guides.json variants references unknown guide '${guide_id}'`);
+            continue;
+        }
+        if (typeof variant_id !== "string") {
+            continue;
+        }
+        if (!guide_record.variants[variant_id]) {
+            push_error(
+                validation_errors,
+                `.pi/guides.json variants.${guide_id} references unknown variant '${variant_id}'`,
+            );
+        }
+    }
+}
+
+function validate_known_guide_list(label, guide_ids, known_guide_ids, validation_errors) {
+    validate_unique_string_array(guide_ids, label, validation_errors);
+    if (!Array.isArray(guide_ids)) {
+        return;
+    }
+
+    for (const guide_id of guide_ids) {
+        if (typeof guide_id !== "string") {
+            continue;
+        }
+        if (!known_guide_ids.has(guide_id)) {
+            push_error(validation_errors, `${label} references unknown guide '${guide_id}'`);
+        }
+    }
+}
+
+function validate_repo_guide_config(guide_config, profiles_registry, guide_ids, guides_registry, validation_errors) {
+    if (!is_plain_object(guide_config)) {
+        push_error(validation_errors, ".pi/guides.json must contain a JSON object");
+        return;
+    }
+    if (guide_config.version !== 1) {
+        push_error(validation_errors, ".pi/guides.json must declare version 1");
+    }
+
+    const has_profile = guide_config.profile !== undefined;
+    const has_guides = guide_config.guides !== undefined;
+    if (has_profile && has_guides) {
+        push_error(validation_errors, ".pi/guides.json cannot define both 'profile' and 'guides'");
+    }
+    if (!has_profile && !has_guides) {
+        push_error(validation_errors, ".pi/guides.json must define either 'profile' or 'guides'");
+    }
+
+    if (guide_config.profile !== undefined) {
+        validate_non_empty_string(guide_config.profile, ".pi/guides.json profile", validation_errors);
+        if (typeof guide_config.profile === "string") {
+            if (!profiles_registry.profiles[guide_config.profile]) {
+                push_error(
+                    validation_errors,
+                    `.pi/guides.json profile references unknown profile '${guide_config.profile}'`,
+                );
+            }
+        }
+    }
+
+    if (guide_config.guides !== undefined) {
+        validate_known_guide_list(
+            ".pi/guides.json guides",
+            guide_config.guides,
+            guide_ids,
+            validation_errors,
+        );
+    }
+
+    if (guide_config.mode !== undefined) {
+        validate_guide_mode(guide_config.mode, ".pi/guides.json mode", validation_errors);
+    }
+    if (guide_config.additions !== undefined) {
+        validate_known_guide_list(
+            ".pi/guides.json additions",
+            guide_config.additions,
+            guide_ids,
+            validation_errors,
+        );
+    }
+    if (guide_config.removals !== undefined) {
+        validate_known_guide_list(
+            ".pi/guides.json removals",
+            guide_config.removals,
+            guide_ids,
+            validation_errors,
+        );
+    }
+    if (guide_config.variants !== undefined) {
+        validate_variant_overrides(guide_config.variants, guides_registry, validation_errors);
+    }
+}
+
+function print_failure(validation_errors) {
+    console.error("pi-guides validation failed:\n");
+    for (const validation_error of validation_errors) {
+        console.error(`- ${validation_error}`);
+    }
+}
+
+function main() {
+    const validation_errors = [];
+    const root_directory_path = process.cwd();
+    const paths = build_paths(root_directory_path);
+    const file_exists_by_path = validate_required_files(paths, validation_errors);
+
+    const package_json = file_exists_by_path.get(paths.packageJsonPath)
+        ? read_json_file(paths.packageJsonPath, validation_errors)
+        : null;
+    const guides_registry = file_exists_by_path.get(paths.guidesRegistryPath)
+        ? read_json_file(paths.guidesRegistryPath, validation_errors)
+        : null;
+    const profiles_registry = file_exists_by_path.get(paths.profilesRegistryPath)
+        ? read_json_file(paths.profilesRegistryPath, validation_errors)
+        : null;
+    const repo_guide_config = file_exists_by_path.get(paths.repoGuideConfigPath)
+        ? read_json_file(paths.repoGuideConfigPath, validation_errors)
+        : null;
+    const repo_settings = file_exists_by_path.get(paths.repoSettingsPath)
+        ? read_json_file(paths.repoSettingsPath, validation_errors)
+        : null;
+
+    if (package_json !== null) {
+        validate_package_json(package_json, root_directory_path, validation_errors);
+    }
+
+    let guide_ids = null;
+    if (guides_registry !== null) {
+        guide_ids = validate_guides_registry(root_directory_path, guides_registry, validation_errors);
+    }
+
+    if (profiles_registry !== null) {
+        validate_profiles_registry(profiles_registry, guide_ids, validation_errors);
+    }
+    if (file_exists_by_path.get(paths.repoTemplatePath) === true) {
+        validate_template_file(paths.repoTemplatePath, validation_errors);
+    }
+    if (repo_settings !== null) {
+        validate_repo_settings(repo_settings, validation_errors);
+    }
+    if (repo_guide_config !== null && profiles_registry !== null && guides_registry !== null) {
+        if (guide_ids !== null) {
+            validate_repo_guide_config(
+                repo_guide_config,
+                profiles_registry,
+                guide_ids,
+                guides_registry,
+                validation_errors,
+            );
+        }
+    }
+
+    if (validation_errors.length > 0) {
+        print_failure(validation_errors);
+        process.exit(1);
+    }
+
+    console.log(SUCCESS_MESSAGE);
+}
+
+main();

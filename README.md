@@ -331,11 +331,13 @@ Run:
 
 Current validation checks:
 
-- `package.json` has pi-package metadata
-- registry files are valid JSON
+- `package.json` has pi-package metadata and extension registration
+- registry files are valid JSON objects using `version: 1`
+- guide precedence ids and ranks are well-formed and unique
+- guide defaults reference existing variants of the matching size
 - guide variant paths exist
 - profile guide references are valid
-- template managed header markers exist exactly once
+- template managed header markers exist exactly once and in the correct order
 - key runtime files exist
 
 ---
@@ -358,6 +360,12 @@ Language-specific TigerStyle variants and broader guide families can be added la
 
 ## Development notes
 
+The repository also includes validator regression tests:
+
+```bash
+node --test
+```
+
 When changing any of the following, update the docs and rerun validation:
 
 - `extensions/guide-system.ts`
@@ -366,4 +374,5 @@ When changing any of the following, update the docs and rerun validation:
 - `templates/repo-AGENTS.md`
 - `schemas/*.json`
 
-If you change a contract, document the new behavior in this README and keep the template/registry/runtime logic aligned.
+If you change a contract, document the new behavior in this README.
+Keep the template, registry, and runtime logic aligned.
