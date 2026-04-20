@@ -30,6 +30,414 @@
         }
       },
       "skill": null
+    },
+    "security-core": {
+      "title": "Security-Core",
+      "archetype": "rulebook",
+      "precedence": "rulebook",
+      "summary": "Cross-stack security invariants and fail-safe rulebook.",
+      "tags": ["security", "language-agnostic"],
+      "defaults": {
+        "compact": "strict-compact",
+        "full": "strict-full"
+      },
+      "variants": {
+        "strict-compact": {
+          "path": "files/security-core/security-core-strict-compact.md",
+          "size": "compact",
+          "strictness": "strict"
+        },
+        "strict-full": {
+          "path": "files/security-core/security-core-strict-full.md",
+          "size": "full",
+          "strictness": "strict"
+        }
+      },
+      "skill": null
+    },
+    "contract-core": {
+      "title": "Contract-Core",
+      "archetype": "rulebook",
+      "precedence": "rulebook",
+      "summary": "Cross-stack contract semantics and compatibility invariants.",
+      "tags": ["contracts", "language-agnostic"],
+      "defaults": {
+        "compact": "strict-compact",
+        "full": "strict-full"
+      },
+      "variants": {
+        "strict-compact": {
+          "path": "files/contract-core/contract-core-strict-compact.md",
+          "size": "compact",
+          "strictness": "strict"
+        },
+        "strict-full": {
+          "path": "files/contract-core/contract-core-strict-full.md",
+          "size": "full",
+          "strictness": "strict"
+        }
+      },
+      "skill": null
+    },
+    "robustness-core": {
+      "title": "Robustness-Core",
+      "archetype": "rulebook",
+      "precedence": "rulebook",
+      "summary": "Cross-stack failure, concurrency, and integrity invariants.",
+      "tags": ["robustness", "language-agnostic"],
+      "defaults": {
+        "compact": "strict-compact",
+        "full": "strict-full"
+      },
+      "variants": {
+        "strict-compact": {
+          "path": "files/robustness-core/robustness-core-strict-compact.md",
+          "size": "compact",
+          "strictness": "strict"
+        },
+        "strict-full": {
+          "path": "files/robustness-core/robustness-core-strict-full.md",
+          "size": "full",
+          "strictness": "strict"
+        }
+      },
+      "skill": null
+    },
+    "reproducibility-core": {
+      "title": "Reproducibility-Core",
+      "archetype": "rulebook",
+      "precedence": "rulebook",
+      "summary": "Cross-stack deterministic environment, build, test, and provenance invariants.",
+      "tags": ["reproducibility", "language-agnostic"],
+      "defaults": {
+        "compact": "strict-compact",
+        "full": "strict-full"
+      },
+      "variants": {
+        "strict-compact": {
+          "path": "files/reproducibility-core/reproducibility-core-strict-compact.md",
+          "size": "compact",
+          "strictness": "strict"
+        },
+        "strict-full": {
+          "path": "files/reproducibility-core/reproducibility-core-strict-full.md",
+          "size": "full",
+          "strictness": "strict"
+        }
+      },
+      "skill": null
+    },
+    "uistyle": {
+      "title": "UIStyle",
+      "archetype": "heuristics",
+      "precedence": "heuristics",
+      "summary": "Cross-platform UI rulebook for interface-heavy work.",
+      "tags": ["ui", "frontend", "language-agnostic"],
+      "defaults": {
+        "compact": "strict-compact",
+        "full": "strict-full"
+      },
+      "variants": {
+        "strict-compact": {
+          "path": "files/ui/uistyle-strict-compact.md",
+          "size": "compact",
+          "strictness": "strict"
+        },
+        "strict-full": {
+          "path": "files/ui/uistyle-strict-full.md",
+          "size": "full",
+          "strictness": "strict"
+        }
+      },
+      "skill": null
+    },
+    "observability": {
+      "title": "Observability",
+      "archetype": "heuristics",
+      "precedence": "heuristics",
+      "summary": "Cross-stack diagnostics and signal-quality heuristics.",
+      "tags": ["observability", "language-agnostic"],
+      "defaults": {
+        "compact": "strict-compact",
+        "full": "strict-full"
+      },
+      "variants": {
+        "strict-compact": {
+          "path": "files/observability/observability-strict-compact.md",
+          "size": "compact",
+          "strictness": "strict"
+        },
+        "strict-full": {
+          "path": "files/observability/observability-strict-full.md",
+          "size": "full",
+          "strictness": "strict"
+        }
+      },
+      "skill": null
+    },
+    "change-risk": {
+      "title": "Change-Risk",
+      "archetype": "heuristics",
+      "precedence": "heuristics",
+      "summary": "Cross-stack rollout safety and migration-risk heuristics.",
+      "tags": ["migration", "rollout", "language-agnostic"],
+      "defaults": {
+        "compact": "strict-compact",
+        "full": "strict-full"
+      },
+      "variants": {
+        "strict-compact": {
+          "path": "files/change-risk/change-risk-strict-compact.md",
+          "size": "compact",
+          "strictness": "strict"
+        },
+        "strict-full": {
+          "path": "files/change-risk/change-risk-strict-full.md",
+          "size": "full",
+          "strictness": "strict"
+        }
+      },
+      "skill": null
+    },
+    "epistemics": {
+      "title": "Epistemics",
+      "archetype": "heuristics",
+      "precedence": "heuristics",
+      "summary": "Evidence, confidence, and uncertainty-quality heuristics.",
+      "tags": ["analysis", "debugging", "language-agnostic"],
+      "defaults": {
+        "compact": "strict-compact",
+        "full": "strict-full"
+      },
+      "variants": {
+        "strict-compact": {
+          "path": "files/epistemics/epistemics-strict-compact.md",
+          "size": "compact",
+          "strictness": "strict"
+        },
+        "strict-full": {
+          "path": "files/epistemics/epistemics-strict-full.md",
+          "size": "full",
+          "strictness": "strict"
+        }
+      },
+      "skill": null
+    },
+    "performance": {
+      "title": "Performance",
+      "archetype": "heuristics",
+      "precedence": "heuristics",
+      "summary": "Cross-stack latency, throughput, and resource-efficiency heuristics.",
+      "tags": ["performance", "language-agnostic"],
+      "defaults": {
+        "compact": "strict-compact",
+        "full": "strict-full"
+      },
+      "variants": {
+        "strict-compact": {
+          "path": "files/performance/performance-strict-compact.md",
+          "size": "compact",
+          "strictness": "strict"
+        },
+        "strict-full": {
+          "path": "files/performance/performance-strict-full.md",
+          "size": "full",
+          "strictness": "strict"
+        }
+      },
+      "skill": null
+    },
+    "privacy": {
+      "title": "Privacy",
+      "archetype": "heuristics",
+      "precedence": "heuristics",
+      "summary": "Cross-stack data minimization, retention, deletion, and consent-state integrity heuristics.",
+      "tags": ["privacy", "language-agnostic"],
+      "defaults": {
+        "compact": "strict-compact",
+        "full": "strict-full"
+      },
+      "variants": {
+        "strict-compact": {
+          "path": "files/privacy/privacy-strict-compact.md",
+          "size": "compact",
+          "strictness": "strict"
+        },
+        "strict-full": {
+          "path": "files/privacy/privacy-strict-full.md",
+          "size": "full",
+          "strictness": "strict"
+        }
+      },
+      "skill": null
+    },
+    "operability": {
+      "title": "Operability",
+      "archetype": "heuristics",
+      "precedence": "heuristics",
+      "summary": "Cross-stack on-call readiness, recovery ergonomics, and escalation-quality heuristics.",
+      "tags": ["operability", "operations", "language-agnostic"],
+      "defaults": {
+        "compact": "strict-compact",
+        "full": "strict-full"
+      },
+      "variants": {
+        "strict-compact": {
+          "path": "files/operability/operability-strict-compact.md",
+          "size": "compact",
+          "strictness": "strict"
+        },
+        "strict-full": {
+          "path": "files/operability/operability-strict-full.md",
+          "size": "full",
+          "strictness": "strict"
+        }
+      },
+      "skill": null
+    },
+    "maintainability": {
+      "title": "Maintainability",
+      "archetype": "heuristics",
+      "precedence": "heuristics",
+      "summary": "Cross-stack coupling, complexity, and ownership heuristics for long-term changeability.",
+      "tags": ["maintainability", "language-agnostic"],
+      "defaults": {
+        "compact": "strict-compact",
+        "full": "strict-full"
+      },
+      "variants": {
+        "strict-compact": {
+          "path": "files/maintainability/maintainability-strict-compact.md",
+          "size": "compact",
+          "strictness": "strict"
+        },
+        "strict-full": {
+          "path": "files/maintainability/maintainability-strict-full.md",
+          "size": "full",
+          "strictness": "strict"
+        }
+      },
+      "skill": null
+    },
+    "legacy-evolution-mode": {
+      "title": "Legacy-Evolution-Mode",
+      "archetype": "heuristics",
+      "precedence": "heuristics",
+      "summary": "Seam-first and reversible modernization heuristics for existing systems.",
+      "tags": ["legacy", "migration", "language-agnostic"],
+      "defaults": {
+        "compact": "strict-compact",
+        "full": "strict-full"
+      },
+      "variants": {
+        "strict-compact": {
+          "path": "files/legacy-evolution-mode/legacy-evolution-mode-strict-compact.md",
+          "size": "compact",
+          "strictness": "strict"
+        },
+        "strict-full": {
+          "path": "files/legacy-evolution-mode/legacy-evolution-mode-strict-full.md",
+          "size": "full",
+          "strictness": "strict"
+        }
+      },
+      "skill": null
+    },
+    "incremental-refactoring-strategy": {
+      "title": "Incremental-Refactoring-Strategy",
+      "archetype": "heuristics",
+      "precedence": "heuristics",
+      "summary": "Staged refactor sequencing and coexistence-state heuristics.",
+      "tags": ["refactoring", "migration", "language-agnostic"],
+      "defaults": {
+        "compact": "strict-compact",
+        "full": "strict-full"
+      },
+      "variants": {
+        "strict-compact": {
+          "path": "files/incremental-refactoring-strategy/incremental-refactoring-strategy-strict-compact.md",
+          "size": "compact",
+          "strictness": "strict"
+        },
+        "strict-full": {
+          "path": "files/incremental-refactoring-strategy/incremental-refactoring-strategy-strict-full.md",
+          "size": "full",
+          "strictness": "strict"
+        }
+      },
+      "skill": null
+    },
+    "compatibility-evolution": {
+      "title": "Compatibility-Evolution",
+      "archetype": "heuristics",
+      "precedence": "heuristics",
+      "summary": "Compatibility-safe boundary evolution and deprecation heuristics.",
+      "tags": ["compatibility", "migration", "language-agnostic"],
+      "defaults": {
+        "compact": "strict-compact",
+        "full": "strict-full"
+      },
+      "variants": {
+        "strict-compact": {
+          "path": "files/compatibility-evolution/compatibility-evolution-strict-compact.md",
+          "size": "compact",
+          "strictness": "strict"
+        },
+        "strict-full": {
+          "path": "files/compatibility-evolution/compatibility-evolution-strict-full.md",
+          "size": "full",
+          "strictness": "strict"
+        }
+      },
+      "skill": null
+    },
+    "diataxis": {
+      "title": "Diataxis",
+      "archetype": "heuristics",
+      "precedence": "heuristics",
+      "summary": "Documentation architecture and mode-boundary heuristics.",
+      "tags": ["documentation", "language-agnostic"],
+      "defaults": {
+        "compact": "strict-compact",
+        "full": "strict-full"
+      },
+      "variants": {
+        "strict-compact": {
+          "path": "files/diataxis/diataxis-strict-compact.md",
+          "size": "compact",
+          "strictness": "strict"
+        },
+        "strict-full": {
+          "path": "files/diataxis/diataxis-strict-full.md",
+          "size": "full",
+          "strictness": "strict"
+        }
+      },
+      "skill": null
+    },
+    "testing": {
+      "title": "Testing",
+      "archetype": "playbook",
+      "precedence": "playbook",
+      "summary": "Practical testing defaults and implementation patterns.",
+      "tags": ["testing", "language-agnostic"],
+      "defaults": {
+        "compact": "pragmatic-compact",
+        "full": "pragmatic-full"
+      },
+      "variants": {
+        "pragmatic-compact": {
+          "path": "files/testing/testing-pragmatic-compact.md",
+          "size": "compact",
+          "strictness": "pragmatic"
+        },
+        "pragmatic-full": {
+          "path": "files/testing/testing-pragmatic-full.md",
+          "size": "full",
+          "strictness": "pragmatic"
+        }
+      },
+      "skill": null
     }
   }
 }

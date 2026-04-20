@@ -56,6 +56,41 @@ Notes:
 - This remains the default low-friction starting point.
 - It should stay compact and high-signal.
 
+### `coreplus`
+
+Purpose:
+
+- Good all-rounder baseline for repositories that want more than bare TigerStyle without becoming domain-specific.
+
+Always-on guides:
+
+- `tigerstyle`
+- `security-core`
+- `contract-core`
+- `change-risk`
+- `epistemics`
+
+Default mode:
+
+- `compact`
+
+Recommended prompts:
+
+- `/review`
+- `/design`
+- `/debug`
+
+Recommended skills:
+
+- `guide-review`
+- `risk-assessment`
+
+Notes:
+
+- This is the recommended general-purpose step up from `core`.
+- It is meant to be the default "good all-rounder" profile when a repo wants stronger baseline guidance.
+- It stays language-agnostic and compact.
+
 ### `frontend`
 
 Purpose:
@@ -127,7 +162,7 @@ Notes:
 
 Purpose:
 
-- Documentation-heavy repositories or task environments.
+- Documentation-heavy repositories where documentation structure and documentation quality are part of the repo baseline.
 
 Always-on guides:
 
@@ -150,7 +185,8 @@ Recommended skills:
 
 Notes:
 
-- This may also fit doc-focused sessions inside software repos, not only doc-only repos.
+- Use this as a repo baseline for documentation-first or documentation-heavy repositories.
+- Prefer the `docs-authoring` overlay when you only want temporary documentation emphasis inside an otherwise code-focused repo.
 
 ### `security-sensitive`
 
@@ -331,7 +367,7 @@ Notes:
 
 Purpose:
 
-- Temporary stance for writing or restructuring docs.
+- Temporary stance for writing or restructuring docs inside any repository.
 
 Guide additions:
 
@@ -357,6 +393,9 @@ Recommended skills:
 
 Notes:
 
+- This is different from the `docs` baseline profile.
+- `docs` is for repos whose normal baseline is documentation quality.
+- `docs-authoring` is for a temporary overlay when the current task is documentation work.
 - This should work well across code repos and doc repos.
 
 ### `release`

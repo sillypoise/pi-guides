@@ -12,6 +12,16 @@ type GuideMode = "compact" | "full";
 type PrecedenceId = "rulebook" | "heuristics" | "playbook" | "framework";
 type NotifyLevel = "info" | "warning";
 type SyncAgentsResult = "created" | "updated" | "unchanged" | "skipped";
+type ProfileScope = "baseline" | "overlay" | "any";
+type WritePolicy = "normal" | "read-only";
+type ToolMode = "normal" | "conservative";
+type ResponseContract = "default" | "review-findings";
+
+type BehaviorSettings = {
+    writePolicy: WritePolicy;
+    toolMode: ToolMode;
+    responseContract: ResponseContract;
+};
 
 type VariantRecord = {
     path: string;
@@ -41,6 +51,8 @@ type ProfileRecord = {
     description?: string;
     guides: string[];
     mode?: GuideMode;
+    scope?: ProfileScope;
+    behavior?: Partial<BehaviorSettings>;
 };
 
 type ProfileRegistry = {
@@ -81,7 +93,10 @@ type ResolvedActiveState = {
     configPath: string;
     profile: string | null;
     profileTitle: string | null;
+    sessionProfile: string | null;
+    sessionProfileTitle: string | null;
     mode: GuideMode;
+    behavior: BehaviorSettings;
     guides: ResolvedGuide[];
 };
 
@@ -95,7 +110,10 @@ type PathState =
 type ResolvedSource = {
     profile: string | null;
     profileTitle: string | null;
+    sessionProfile: string | null;
+    sessionProfileTitle: string | null;
     mode: GuideMode;
+    behavior: BehaviorSettings;
     ids: string[];
 };
 
@@ -145,8 +163,16 @@ const GUIDE_STATUS_KEY = "pi-guides:status";
 const GUIDE_WIDGET_KEY = "pi-guides:widget";
 const GUIDE_MODE_COMPACT: GuideMode = "compact";
 const GUIDE_MODE_FULL: GuideMode = "full";
+const DEFAULT_BEHAVIOR: BehaviorSettings = {
+    writePolicy: "normal",
+    toolMode: "normal",
+    responseContract: "default",
+};
+const SESSION_OVERLAY_ENTRY_TYPE = "pi-guides-session-overlay";
 const BEGIN_HEADER = "<!-- BEGIN MANAGED GUIDE HEADER -->";
 const END_HEADER = "<!-- END MANAGED GUIDE HEADER -->";
+
+const session_overlay_profiles = new Map<string, string | null>();
 
 let registryCache: GuideRegistry | null = null;
 let profilesCache: ProfileRegistry | null = null;
@@ -509,6 +535,41 @@ function fallbackVariantOrder(mode: GuideMode): string[] {
     return ["strict-full", "pragmatic-full", "strict-compact", "pragmatic-compact"];
 }
 
+function mergeBehaviorSettings(
+    base: BehaviorSettings,
+    override: Partial<BehaviorSettings> | undefined,
+): BehaviorSettings {
+    if (override === undefined) {
+        return { ...base };
+    }
+
+    return {
+        writePolicy: override.writePolicy ?? base.writePolicy,
+        toolMode: override.toolMode ?? base.toolMode,
+        responseContract: override.responseContract ?? base.responseContract,
+    };
+}
+
+function getSessionOverlayProfileId(cwd: string): string | null {
+    return session_overlay_profiles.get(cwd) ?? null;
+}
+
+function setSessionOverlayProfileId(cwd: string, profileId: string | null): void {
+    if (profileId === null) {
+        session_overlay_profiles.delete(cwd);
+        return;
+    }
+    session_overlay_profiles.set(cwd, profileId);
+}
+
+function allowedAsBaselineProfile(profile: ProfileRecord): boolean {
+    return profile.scope !== "overlay";
+}
+
+function allowedAsSessionOverlayProfile(profile: ProfileRecord): boolean {
+    return profile.scope === "overlay" || profile.scope === "any";
+}
+
 function pickVariant(guide: GuideRecord, mode: GuideMode, explicitVariant?: string): string {
     if (explicitVariant !== undefined) {
         if (!guide.variants[explicitVariant]) {
@@ -534,9 +595,22 @@ function pickVariant(guide: GuideRecord, mode: GuideMode, explicitVariant?: stri
     throw new Error(`Guide '${guide.title}' has no usable variant for mode '${mode}'`);
 }
 
+function formatNamedProfile(profileId: string | null, profileTitle: string | null): string {
+    if (profileId === null) {
+        return "custom";
+    }
+    if (profileTitle === null) {
+        return profileId;
+    }
+    return `${profileId} (${profileTitle})`;
+}
+
 function renderStatus(state: ResolvedState): string {
     if (state.active) {
         const profile = state.profile ?? "custom";
+        if (state.sessionProfile !== null) {
+            return `guides: ${profile} + ${state.sessionProfile} (${state.mode})`;
+        }
         return `guides: ${profile} (${state.mode})`;
     }
     if (state.inactiveKind === "error") {
@@ -546,13 +620,7 @@ function renderStatus(state: ResolvedState): string {
 }
 
 function formatProfileName(state: ResolvedActiveState): string {
-    if (state.profile === null) {
-        return "custom";
-    }
-    if (state.profileTitle === null) {
-        return state.profile;
-    }
-    return `${state.profile} (${state.profileTitle})`;
+    return formatNamedProfile(state.profile, state.profileTitle);
 }
 
 function rejectDirectGuideModifiers(config: GuideConfig): void {
@@ -567,7 +635,11 @@ function rejectDirectGuideModifiers(config: GuideConfig): void {
     }
 }
 
-function resolveProfileSource(config: GuideConfig, profiles: ProfileRegistry): ResolvedSource {
+function resolveProfileSource(
+    config: GuideConfig,
+    profiles: ProfileRegistry,
+    sessionOverlayProfileId: string | null,
+): ResolvedSource {
     const profileId = config.profile;
     if (profileId === undefined) {
         throw new Error("Expected profile-based guide config");
@@ -578,42 +650,93 @@ function resolveProfileSource(config: GuideConfig, profiles: ProfileRegistry): R
         throw new Error(`Unknown profile '${profileId}'`);
     }
 
-    const baseIds = profile.guides;
     const additions = config.additions ?? [];
     const removals = config.removals ?? [];
-    const ids = dedupe([...baseIds, ...additions]).filter((id) => !removals.includes(id));
+    let ids = dedupe([...profile.guides, ...additions]).filter((id) => !removals.includes(id));
+    let mode = config.mode ?? profile.mode ?? "compact";
+    let behavior = mergeBehaviorSettings(DEFAULT_BEHAVIOR, profile.behavior);
+    let sessionProfileTitle: string | null = null;
+
+    if (sessionOverlayProfileId !== null) {
+        const sessionProfile = profiles.profiles[sessionOverlayProfileId];
+        if (!sessionProfile) {
+            throw new Error(`Unknown session overlay profile '${sessionOverlayProfileId}'`);
+        }
+        if (!allowedAsSessionOverlayProfile(sessionProfile)) {
+            throw new Error(`Profile '${sessionOverlayProfileId}' is not allowed as a session overlay`);
+        }
+
+        ids = dedupe([...ids, ...sessionProfile.guides]);
+        mode = sessionProfile.mode ?? mode;
+        behavior = mergeBehaviorSettings(behavior, sessionProfile.behavior);
+        sessionProfileTitle = sessionProfile.title;
+    }
 
     return {
         profile: profileId,
         profileTitle: profile.title,
-        mode: config.mode ?? profile.mode ?? "compact",
+        sessionProfile: sessionOverlayProfileId,
+        sessionProfileTitle,
+        mode,
+        behavior,
         ids,
     };
 }
 
-function resolveDirectGuideSource(config: GuideConfig): ResolvedSource {
+function resolveDirectGuideSource(
+    config: GuideConfig,
+    profiles: ProfileRegistry,
+    sessionOverlayProfileId: string | null,
+): ResolvedSource {
     rejectDirectGuideModifiers(config);
+    let ids = dedupe(config.guides ?? []);
+    let mode = config.mode ?? "compact";
+    let behavior = { ...DEFAULT_BEHAVIOR };
+    let sessionProfileTitle: string | null = null;
+
+    if (sessionOverlayProfileId !== null) {
+        const sessionProfile = profiles.profiles[sessionOverlayProfileId];
+        if (!sessionProfile) {
+            throw new Error(`Unknown session overlay profile '${sessionOverlayProfileId}'`);
+        }
+        if (!allowedAsSessionOverlayProfile(sessionProfile)) {
+            throw new Error(`Profile '${sessionOverlayProfileId}' is not allowed as a session overlay`);
+        }
+
+        ids = dedupe([...ids, ...sessionProfile.guides]);
+        mode = sessionProfile.mode ?? mode;
+        behavior = mergeBehaviorSettings(behavior, sessionProfile.behavior);
+        sessionProfileTitle = sessionProfile.title;
+    }
+
     return {
         profile: null,
         profileTitle: null,
-        mode: config.mode ?? "compact",
-        ids: dedupe(config.guides ?? []),
+        sessionProfile: sessionOverlayProfileId,
+        sessionProfileTitle,
+        mode,
+        behavior,
+        ids,
     };
 }
 
-function resolveSourceIds(config: GuideConfig, profiles: ProfileRegistry): ResolvedSource {
+function resolveSourceIds(
+    config: GuideConfig,
+    profiles: ProfileRegistry,
+    sessionOverlayProfileId: string | null,
+): ResolvedSource {
     if (config.profile !== undefined) {
         if (config.guides !== undefined) {
             throw new Error(".pi/guides.json cannot define both 'profile' and 'guides'");
         }
-        return resolveProfileSource(config, profiles);
+        return resolveProfileSource(config, profiles, sessionOverlayProfileId);
     }
 
     if (config.guides === undefined) {
         throw new Error(".pi/guides.json must define either 'profile' or 'guides'");
     }
 
-    return resolveDirectGuideSource(config);
+    return resolveDirectGuideSource(config, profiles, sessionOverlayProfileId);
 }
 
 function buildPrecedenceRanks(registry: GuideRegistry): Map<PrecedenceId, number> {
@@ -685,15 +808,19 @@ async function resolveActiveState(
     config: GuideConfig,
     registry: GuideRegistry,
     profiles: ProfileRegistry,
+    sessionOverlayProfileId: string | null,
 ): Promise<ResolvedActiveState> {
-    const source = resolveSourceIds(config, profiles);
+    const source = resolveSourceIds(config, profiles, sessionOverlayProfileId);
     const guides = await resolveGuides(source, config.variants, registry);
     return {
         active: true,
         configPath,
         profile: source.profile,
         profileTitle: source.profileTitle,
+        sessionProfile: source.sessionProfile,
+        sessionProfileTitle: source.sessionProfileTitle,
         mode: source.mode,
+        behavior: source.behavior,
         guides,
     };
 }
@@ -719,7 +846,14 @@ async function resolveState(cwd: string): Promise<ResolvedState> {
             throw new Error(`Unsupported guides config version '${String(config.version)}'`);
         }
 
-        return await resolveActiveState(configPath, config, registry, profiles);
+        const sessionOverlayProfileId = getSessionOverlayProfileId(cwd);
+        return await resolveActiveState(
+            configPath,
+            config,
+            registry,
+            profiles,
+            sessionOverlayProfileId,
+        );
     } catch (error) {
         const reason = error instanceof Error ? error.message : String(error);
         return makeErrorState(configPath, reason);
@@ -772,23 +906,42 @@ async function buildInjectedPrompt(state: ResolvedActiveState, registry: GuideRe
     const precedence = formatPrecedence(registry);
     const guideList = formatGuideList(state.guides);
     const body = formatGuideBody(contents);
-
-    return [
+    const lines = [
         "## Active Guide System",
         "",
         `Profile: ${state.profile ?? "custom"}`,
-        `Mode: ${state.mode}`,
-        `Precedence: ${precedence}`,
-        "",
-        "Apply the active guides below as binding policy for this turn.",
+    ];
+
+    if (state.sessionProfile !== null) {
+        lines.push(`Session Overlay: ${state.sessionProfile}`);
+    }
+
+    lines.push(`Mode: ${state.mode}`);
+    lines.push(`Precedence: ${precedence}`);
+    lines.push(`Write Policy: ${state.behavior.writePolicy}`);
+    lines.push(`Tool Mode: ${state.behavior.toolMode}`);
+    lines.push(`Response Contract: ${state.behavior.responseContract}`);
+    lines.push("");
+    lines.push("Apply the active guides below as binding policy for this turn.");
+    lines.push(
         "When doing implementation work, explicitly verify negative, error, and boundary paths, not only happy paths.",
+    );
+    lines.push(
         "In final summaries, prefer concise rule-application traces that reference the relevant guide ids or rule ids.",
-        "",
-        "### Active Guides",
-        guideList,
-        "",
-        body,
-    ].join("\n");
+    );
+    if (state.behavior.writePolicy === "read-only") {
+        lines.push("This turn is read-only. Do not edit files or write files.");
+    }
+    if (state.behavior.responseContract === "review-findings") {
+        lines.push("Respond as review findings first: issues, risks, and missing boundary checks.");
+    }
+    lines.push("");
+    lines.push("### Active Guides");
+    lines.push(guideList);
+    lines.push("");
+    lines.push(body);
+
+    return lines.join("\n");
 }
 
 function pushOptionalConfigLines(lines: string[], label: string, values: string[] | undefined): void {
@@ -817,11 +970,22 @@ function pushVariantOverrideLines(lines: string[], variants: Record<string, stri
     }
 }
 
-function buildAvailableProfileLines(profiles: ProfileRegistry): string[] {
+function buildAvailableProfileLines(
+    profiles: ProfileRegistry,
+    scope: "all" | "baseline" | "overlay" = "all",
+): string[] {
     const lines = ["available profiles:"];
     for (const [profileId, profile] of Object.entries(profiles.profiles)) {
+        if (scope === "baseline" && !allowedAsBaselineProfile(profile)) {
+            continue;
+        }
+        if (scope === "overlay" && !allowedAsSessionOverlayProfile(profile)) {
+            continue;
+        }
+
         const description = profile.description ?? "No description.";
-        lines.push(`- ${profileId}: ${description}`);
+        const profileScope = profile.scope ?? "any";
+        lines.push(`- ${profileId} [${profileScope}]: ${description}`);
     }
     return lines;
 }
@@ -842,6 +1006,16 @@ async function buildGuidesWidgetLines(cwd: string, state: ResolvedState): Promis
         `mode: ${state.mode}`,
         `precedence: ${formatPrecedence(registry)}`,
     ];
+
+    if (state.sessionProfile !== null) {
+        lines.push(
+            `session overlay: ${formatNamedProfile(state.sessionProfile, state.sessionProfileTitle)}`,
+        );
+    }
+
+    lines.push(`write policy: ${state.behavior.writePolicy}`);
+    lines.push(`tool mode: ${state.behavior.toolMode}`);
+    lines.push(`response contract: ${state.behavior.responseContract}`);
 
     if (config.profile !== undefined) {
         lines.push(`config profile: ${config.profile}`);
@@ -906,8 +1080,16 @@ function widgetLines(state: ResolvedState): string[] {
         `config: ${state.configPath}`,
         `profile: ${state.profile ?? "custom"}${state.profileTitle ? ` (${state.profileTitle})` : ""}`,
         `mode: ${state.mode}`,
-        "active:",
     ];
+    if (state.sessionProfile !== null) {
+        lines.push(
+            `session overlay: ${state.sessionProfile}${state.sessionProfileTitle ? ` (${state.sessionProfileTitle})` : ""}`,
+        );
+    }
+    lines.push(`write policy: ${state.behavior.writePolicy}`);
+    lines.push(`tool mode: ${state.behavior.toolMode}`);
+    lines.push(`response contract: ${state.behavior.responseContract}`);
+    lines.push("active:");
     for (const guide of state.guides) {
         lines.push(`- ${guide.id} (${guide.variant}) -> ${guide.relativePath}`);
     }
@@ -1250,7 +1432,29 @@ async function showProfilesWidget(ctx: ExtensionCommandContext, state: ResolvedS
         `status: ${renderStatus(state)}`,
         `config: ${state.configPath}`,
     ];
-    lines.push(...buildAvailableProfileLines(profiles));
+    lines.push(...buildAvailableProfileLines(profiles, "baseline"));
+    setGuidesWidget(ctx, lines);
+}
+
+async function showSessionProfilesWidget(
+    ctx: ExtensionCommandContext,
+    state: ResolvedState,
+): Promise<void> {
+    const profiles = await loadProfiles();
+    const lines = [
+        "pi guide session",
+        `status: ${renderStatus(state)}`,
+        `config: ${state.configPath}`,
+    ];
+    if (state.active && state.sessionProfile !== null) {
+        lines.push(
+            `session overlay: ${formatNamedProfile(state.sessionProfile, state.sessionProfileTitle)}`,
+        );
+    } else {
+        lines.push("session overlay: none");
+    }
+    lines.push("usage: /guide-session <profile-id|clear>");
+    lines.push(...buildAvailableProfileLines(profiles, "overlay"));
     setGuidesWidget(ctx, lines);
 }
 
@@ -1294,6 +1498,60 @@ function parseGuideModeArg(args: string | undefined): GuideMode | "missing" | "i
     return "invalid";
 }
 
+async function runGuideSession(
+    pi: ExtensionAPI,
+    ctx: ExtensionCommandContext,
+    args: string | undefined,
+): Promise<void> {
+    const state = await refreshStatus(ctx);
+    const parts = splitArgs(args);
+    if (parts.length === 0) {
+        await showSessionProfilesWidget(ctx, state);
+        ctx.ui.notify("guide-session: specify an overlay profile id or 'clear'", "info");
+        return;
+    }
+
+    const profileId = parts[0];
+    if (profileId === "clear") {
+        if (!state.active || state.sessionProfile === null) {
+            await showSessionProfilesWidget(ctx, state);
+            ctx.ui.notify("guide-session: no session overlay is active", "info");
+            return;
+        }
+
+        setSessionOverlayProfileId(ctx.cwd, null);
+        pi.appendEntry(SESSION_OVERLAY_ENTRY_TYPE, { profileId: null });
+        const nextState = await refreshStatus(ctx);
+        await showGuidesWidget(ctx, nextState);
+        ctx.ui.notify("guide-session: cleared the active session overlay", "success");
+        return;
+    }
+
+    const profiles = await loadProfiles();
+    const profile = profiles.profiles[profileId];
+    if (profile === undefined) {
+        await showSessionProfilesWidget(ctx, state);
+        ctx.ui.notify(`guide-session: unknown profile '${profileId}'`, "warning");
+        return;
+    }
+    if (!allowedAsSessionOverlayProfile(profile)) {
+        await showSessionProfilesWidget(ctx, state);
+        ctx.ui.notify(`guide-session: profile '${profileId}' is not an overlay profile`, "warning");
+        return;
+    }
+    if (state.active && state.sessionProfile === profileId) {
+        await showSessionProfilesWidget(ctx, state);
+        ctx.ui.notify(`guide-session: overlay '${profileId}' is already active`, "info");
+        return;
+    }
+
+    setSessionOverlayProfileId(ctx.cwd, profileId);
+    pi.appendEntry(SESSION_OVERLAY_ENTRY_TYPE, { profileId });
+    const nextState = await refreshStatus(ctx);
+    await showGuidesWidget(ctx, nextState);
+    ctx.ui.notify(`guide-session: activated overlay '${profileId}' for this session`, "success");
+}
+
 async function runGuideProfile(ctx: ExtensionCommandContext, args: string | undefined): Promise<void> {
     const state = await refreshStatus(ctx);
     const parts = splitArgs(args);
@@ -1309,6 +1567,11 @@ async function runGuideProfile(ctx: ExtensionCommandContext, args: string | unde
     if (profile === undefined) {
         await showProfilesWidget(ctx, state);
         ctx.ui.notify(`guide-profile: unknown profile '${profileId}'`, "warning");
+        return;
+    }
+    if (!allowedAsBaselineProfile(profile)) {
+        await showProfilesWidget(ctx, state);
+        ctx.ui.notify(`guide-profile: profile '${profileId}' is not allowed as a repo baseline`, "warning");
         return;
     }
 
@@ -1405,7 +1668,24 @@ export default function guideSystemExtension(pi: ExtensionAPI) {
         },
     });
 
+    pi.registerCommand("guide-session", {
+        description: "Activate or clear a temporary guide overlay for this session",
+        handler: async (args, ctx) => {
+            await runGuideSession(pi, ctx, args);
+        },
+    });
+
     pi.on("session_start", async (_event, ctx) => {
+        const sessionEntries = ctx.sessionManager?.getEntries?.() ?? [];
+        const sessionOverlayEntry = sessionEntries
+            .filter((entry) => {
+                return entry.type === "custom" && entry.customType === SESSION_OVERLAY_ENTRY_TYPE;
+            })
+            .pop() as { data?: { profileId?: string | null } } | undefined;
+
+        const sessionOverlayProfileId = sessionOverlayEntry?.data?.profileId ?? null;
+        setSessionOverlayProfileId(ctx.cwd, sessionOverlayProfileId);
+
         const state = await refreshStatus(ctx);
         if (state.active) {
             return;
@@ -1429,7 +1709,25 @@ export default function guideSystemExtension(pi: ExtensionAPI) {
         };
     });
 
+    pi.on("tool_call", async (event, ctx) => {
+        const state = await resolveState(ctx.cwd);
+        if (!state.active) {
+            return undefined;
+        }
+        if (state.behavior.writePolicy !== "read-only") {
+            return undefined;
+        }
+        if (event.toolName !== "edit" && event.toolName !== "write") {
+            return undefined;
+        }
+
+        const path = typeof event.input.path === "string" ? event.input.path : "unknown path";
+        ctx.ui.notify(`guide-session: blocked write in read-only mode: ${path}`, "warning");
+        return { block: true, reason: "Blocked by pi-guides read-only mode" };
+    });
+
     pi.on("session_shutdown", async (_event, ctx) => {
+        setSessionOverlayProfileId(ctx.cwd, null);
         clearUi(ctx);
     });
 }

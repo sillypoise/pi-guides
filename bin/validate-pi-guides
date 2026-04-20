@@ -137,6 +137,16 @@ function validate_unique_string_array(values, label, validation_errors) {
     }
 }
 
+function validate_enumeration(value, label, allowed_values, validation_errors) {
+    validate_non_empty_string(value, label, validation_errors);
+    if (typeof value !== "string") {
+        return;
+    }
+    if (!allowed_values.includes(value)) {
+        push_error(validation_errors, `${label} must be one of: ${allowed_values.join(", ")}`);
+    }
+}
+
 function validate_guide_mode(value, label, validation_errors) {
     validate_non_empty_string(value, label, validation_errors);
     if (typeof value !== "string") {
@@ -489,6 +499,46 @@ function validate_profile_record(profile_id, profile_record, guide_ids, validati
 
     if (profile_record.mode !== undefined) {
         validate_guide_mode(profile_record.mode, `Profile '${profile_id}'.mode`, validation_errors);
+    }
+
+    if (profile_record.scope !== undefined) {
+        validate_enumeration(
+            profile_record.scope,
+            `Profile '${profile_id}'.scope`,
+            ["baseline", "overlay", "any"],
+            validation_errors,
+        );
+    }
+
+    if (profile_record.behavior !== undefined) {
+        if (!is_plain_object(profile_record.behavior)) {
+            push_error(validation_errors, `Profile '${profile_id}'.behavior must be an object`);
+        } else {
+            if (profile_record.behavior.writePolicy !== undefined) {
+                validate_enumeration(
+                    profile_record.behavior.writePolicy,
+                    `Profile '${profile_id}'.behavior.writePolicy`,
+                    ["normal", "read-only"],
+                    validation_errors,
+                );
+            }
+            if (profile_record.behavior.toolMode !== undefined) {
+                validate_enumeration(
+                    profile_record.behavior.toolMode,
+                    `Profile '${profile_id}'.behavior.toolMode`,
+                    ["normal", "conservative"],
+                    validation_errors,
+                );
+            }
+            if (profile_record.behavior.responseContract !== undefined) {
+                validate_enumeration(
+                    profile_record.behavior.responseContract,
+                    `Profile '${profile_id}'.behavior.responseContract`,
+                    ["default", "review-findings"],
+                    validation_errors,
+                );
+            }
+        }
     }
 }
 

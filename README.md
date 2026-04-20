@@ -14,17 +14,37 @@ Current v0.1 scope:
 - profile registry in `registry/profiles.json`
 - guide registry in `registry/guides.json`
 - bootstrap and sync commands for consumer repos
-- persistent profile and mode switching
-- only the base, language-agnostic TigerStyle variants
-  - `files/tigerstyle-strict-compact.md`
-  - `files/tigerstyle-strict-full.md`
+- persistent baseline profile and mode switching
+- session-scoped overlay activation
+- imported language-agnostic foundation guides including:
+  - TigerStyle
+  - Security-Core
+  - Contract-Core
+  - Robustness-Core
+  - Reproducibility-Core
+  - UIStyle
+  - Observability
+  - Change-Risk
+  - Epistemics
+  - Performance
+  - Privacy
+  - Operability
+  - Maintainability
+  - Legacy-Evolution-Mode
+  - Incremental-Refactoring-Strategy
+  - Compatibility-Evolution
+  - Diataxis
+  - Testing
 
 Design notes for the next phase live in:
 
 - `docs/context-activation-engine.md`
 - `docs/content-placement.md`
 - `docs/activation-state-model.md`
+- `docs/package-repo-session-model.md`
 - `docs/profile-schema-v2.md`
+- `docs/guides-config-v2.md`
+- `docs/runtime-behavior-flags.md`
 - `docs/profile-catalog.md`
 
 Not included yet:
@@ -32,7 +52,7 @@ Not included yet:
 - language-specific TigerStyle variants
 - framework or library guides
 - skills for optional deep guide families
-- session-scoped overrides
+- one-turn task overlays
 - custom compaction behavior
 - hosted JSON schema URLs
 
@@ -470,6 +490,8 @@ The widget includes:
 - current resolved status
 - config path
 - active profile and mode
+- active session overlay when present
+- effective write policy, tool mode, and response contract
 - precedence order
 - config-level additions, removals, and variant overrides when present
 - resolved guide entries with source paths and summaries
@@ -522,9 +544,11 @@ Persists a named profile into `.pi/guides.json` and reloads the runtime.
 Current v0.1 behavior:
 
 - profile ids come from `registry/profiles.json`
+- baseline examples now include `core`, `coreplus`, `frontend`, `backend`, `docs`, and `security-sensitive`
 - if the repo currently uses direct `guides`, the command switches to profile-based config
 - direct-guide-only fields are dropped during that transition
 - invalid profile ids are rejected explicitly
+- overlay-only profiles are rejected explicitly
 - a no-op write is detected and reported without reloading
 - calling without arguments shows available profiles
 
@@ -538,6 +562,19 @@ Current v0.1 behavior:
 - invalid values are rejected explicitly
 - a no-op write is detected and reported without reloading
 - if no mode is provided, the command shows the current guide widget and explains usage
+
+### `/guide-session <profile-id|clear>`
+
+Activates or clears a temporary session overlay without rewriting `.pi/guides.json`.
+
+Current v0.1 behavior:
+
+- overlay profile ids come from `registry/profiles.json`
+- baseline-only profiles are rejected explicitly
+- `clear` removes the active session overlay
+- built-in overlays now include `review`, `migration`, `debug`, `design`, `docs-authoring`, and `release`
+- `review` sets read-only write policy and blocks `edit` and `write` tool calls
+- a no-op activation is detected and reported without reloading
 
 ---
 

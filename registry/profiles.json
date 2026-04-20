@@ -3,8 +3,109 @@
   "profiles": {
     "core": {
       "title": "Core",
-      "description": "Base TigerStyle-only profile using the language-agnostic rulebook.",
-      "guides": ["tigerstyle"]
+      "description": "Minimal cross-repo coding baseline built on the language-agnostic TigerStyle rulebook.",
+      "scope": "baseline",
+      "guides": ["tigerstyle"],
+      "mode": "compact"
+    },
+    "coreplus": {
+      "title": "CorePlus",
+      "description": "Good all-rounder baseline that keeps TigerStyle minimality while adding security, contract, change-risk, and epistemic quality.",
+      "scope": "baseline",
+      "guides": ["tigerstyle", "security-core", "contract-core", "change-risk", "epistemics"],
+      "mode": "compact"
+    },
+    "frontend": {
+      "title": "Frontend",
+      "description": "Frontend baseline for UI-heavy repositories where interface quality and maintainability matter daily.",
+      "scope": "baseline",
+      "guides": ["tigerstyle", "uistyle", "maintainability", "observability"],
+      "mode": "compact"
+    },
+    "backend": {
+      "title": "Backend",
+      "description": "Service and API baseline emphasizing contracts, robustness, observability, and operability.",
+      "scope": "baseline",
+      "guides": [
+        "tigerstyle",
+        "contract-core",
+        "robustness-core",
+        "observability",
+        "operability"
+      ],
+      "mode": "compact"
+    },
+    "docs": {
+      "title": "Docs",
+      "description": "Documentation-heavy baseline emphasizing document structure, evidence quality, and maintainability.",
+      "scope": "baseline",
+      "guides": ["diataxis", "epistemics", "maintainability"],
+      "mode": "compact"
+    },
+    "security-sensitive": {
+      "title": "Security-Sensitive",
+      "description": "Higher-sensitivity baseline for repos where security, contracts, privacy, and reproducibility are daily concerns.",
+      "scope": "baseline",
+      "guides": [
+        "tigerstyle",
+        "security-core",
+        "contract-core",
+        "reproducibility-core",
+        "privacy"
+      ],
+      "mode": "compact"
+    },
+    "review": {
+      "title": "Review",
+      "description": "Temporary read-only review overlay for issue finding, evidence quality, and boundary-focused analysis.",
+      "scope": "overlay",
+      "guides": ["tigerstyle", "change-risk", "epistemics", "maintainability"],
+      "mode": "compact",
+      "behavior": {
+        "writePolicy": "read-only",
+        "toolMode": "conservative",
+        "responseContract": "review-findings"
+      }
+    },
+    "migration": {
+      "title": "Migration",
+      "description": "Temporary overlay for staged modernization and compatibility-sensitive change planning.",
+      "scope": "overlay",
+      "guides": [
+        "change-risk",
+        "legacy-evolution-mode",
+        "incremental-refactoring-strategy",
+        "compatibility-evolution"
+      ],
+      "mode": "compact"
+    },
+    "debug": {
+      "title": "Debug",
+      "description": "Temporary overlay for diagnosis, evidence gathering, instrumentation, and boundary-focused testing.",
+      "scope": "overlay",
+      "guides": ["epistemics", "observability", "robustness-core", "testing"],
+      "mode": "compact"
+    },
+    "design": {
+      "title": "Design",
+      "description": "Temporary overlay for planning, tradeoff analysis, and architecture-level option comparison.",
+      "scope": "overlay",
+      "guides": ["epistemics", "maintainability", "performance"],
+      "mode": "compact"
+    },
+    "docs-authoring": {
+      "title": "Docs Authoring",
+      "description": "Temporary overlay for documentation writing and restructuring with explicit documentation-mode discipline.",
+      "scope": "overlay",
+      "guides": ["diataxis", "epistemics"],
+      "mode": "compact"
+    },
+    "release": {
+      "title": "Release",
+      "description": "Temporary overlay for rollout, compatibility verification, reproducibility, and change-risk review.",
+      "scope": "overlay",
+      "guides": ["change-risk", "compatibility-evolution", "reproducibility-core", "testing"],
+      "mode": "compact"
     }
   }
 }

@@ -15,6 +15,7 @@ import guideSystemExtension from "../extensions/guide-system.ts";
 function createPiHarness() {
     const commands = new Map();
     const events = new Map();
+    const customEntries = [];
     const api = {
         registerCommand(name, options) {
             commands.set(name, options);
@@ -22,10 +23,13 @@ function createPiHarness() {
         on(name, handler) {
             events.set(name, handler);
         },
+        appendEntry(customType, data) {
+            customEntries.push({ customType, data });
+        },
     };
 
     guideSystemExtension(api);
-    return { commands, events };
+    return { commands, events, customEntries };
 }
 
 function createCommandContext(cwd) {
@@ -39,6 +43,12 @@ function createCommandContext(cwd) {
         notifications,
         widgets,
         statuses,
+        hasUI: true,
+        sessionManager: {
+            getEntries() {
+                return [];
+            },
+        },
         get reloadCount() {
             return reloadCount;
         },
@@ -119,14 +129,20 @@ function readGuidesConfig(rootPath) {
     return JSON.parse(readFileSync(join(rootPath, ".pi", "guides.json"), "utf8"));
 }
 
-const { commands } = createPiHarness();
+const { commands, events } = createPiHarness();
 const guideInit = commands.get("guide-init");
 const guideSync = commands.get("guide-sync");
 const guideProfile = commands.get("guide-profile");
 const guideMode = commands.get("guide-mode");
+const guideSession = commands.get("guide-session");
+const beforeAgentStart = events.get("before_agent_start");
+const toolCall = events.get("tool_call");
 
-if (!guideInit || !guideSync || !guideProfile || !guideMode) {
+if (!guideInit || !guideSync || !guideProfile || !guideMode || !guideSession) {
     throw new Error("expected guide commands to be registered");
+}
+if (!beforeAgentStart || !toolCall) {
+    throw new Error("expected guide events to be registered");
 }
 
 test("guide-init --no-settings bootstraps repo-local files without project settings", async () => {
@@ -305,6 +321,143 @@ test("guide-sync reports unchanged without reloading", async () => {
         const widgetLines = unchangedCtx.widgets.at(-1)?.value;
         assert.ok(Array.isArray(widgetLines));
         assert.ok(widgetLines.includes("result: unchanged"));
+    });
+});
+
+test("guide-session activates the review overlay without rewriting repo config", async () => {
+    await withTempRoot(async (rootPath) => {
+        writeGuidesConfig(rootPath, {
+            version: 1,
+            profile: "core",
+            mode: "compact",
+            additions: [],
+            removals: [],
+            variants: {},
+        });
+        const beforeContent = readFileSync(join(rootPath, ".pi", "guides.json"), "utf8");
+        const ctx = createCommandContext(rootPath);
+
+        await guideSession.handler("review", ctx);
+
+        const afterContent = readFileSync(join(rootPath, ".pi", "guides.json"), "utf8");
+        assert.equal(ctx.reloadCount, 0);
+        assert.equal(afterContent, beforeContent);
+
+        const widgetLines = ctx.widgets.at(-1)?.value;
+        assert.ok(Array.isArray(widgetLines));
+        assert.ok(widgetLines.includes("session overlay: review (Review)"));
+        assert.ok(widgetLines.includes("write policy: read-only"));
+        assert.ok(widgetLines.includes("response contract: review-findings"));
+    });
+});
+
+test("guide-session rejects baseline-only profiles", async () => {
+    await withTempRoot(async (rootPath) => {
+        writeGuidesConfig(rootPath, {
+            version: 1,
+            profile: "core",
+            mode: "compact",
+            additions: [],
+            removals: [],
+            variants: {},
+        });
+        const ctx = createCommandContext(rootPath);
+
+        await guideSession.handler("core", ctx);
+
+        assert.equal(ctx.reloadCount, 0);
+        assert.ok(
+            ctx.notifications.some((entry) => {
+                return entry.message.includes("profile 'core' is not an overlay profile");
+            }),
+        );
+    });
+});
+
+test("before_agent_start injects review-mode behavior guidance", async () => {
+    await withTempRoot(async (rootPath) => {
+        writeGuidesConfig(rootPath, {
+            version: 1,
+            profile: "core",
+            mode: "compact",
+            additions: [],
+            removals: [],
+            variants: {},
+        });
+        const sessionCtx = createCommandContext(rootPath);
+        await guideSession.handler("review", sessionCtx);
+
+        const eventCtx = createCommandContext(rootPath);
+        const result = await beforeAgentStart(
+            { systemPrompt: "Base system prompt" },
+            eventCtx,
+        );
+
+        assert.equal(typeof result?.systemPrompt, "string");
+        assert.match(result.systemPrompt, /Session Overlay: review/);
+        assert.match(result.systemPrompt, /Write Policy: read-only/);
+        assert.match(result.systemPrompt, /This turn is read-only/);
+        assert.match(result.systemPrompt, /Response Contract: review-findings/);
+    });
+});
+
+test("tool_call blocks edit and write in review read-only mode", async () => {
+    await withTempRoot(async (rootPath) => {
+        writeGuidesConfig(rootPath, {
+            version: 1,
+            profile: "core",
+            mode: "compact",
+            additions: [],
+            removals: [],
+            variants: {},
+        });
+        const sessionCtx = createCommandContext(rootPath);
+        await guideSession.handler("review", sessionCtx);
+
+        const editCtx = createCommandContext(rootPath);
+        const editResult = await toolCall(
+            { toolName: "edit", input: { path: join(rootPath, "README.md") } },
+            editCtx,
+        );
+        assert.deepEqual(editResult, {
+            block: true,
+            reason: "Blocked by pi-guides read-only mode",
+        });
+
+        const writeCtx = createCommandContext(rootPath);
+        const writeResult = await toolCall(
+            { toolName: "write", input: { path: join(rootPath, "README.md") } },
+            writeCtx,
+        );
+        assert.deepEqual(writeResult, {
+            block: true,
+            reason: "Blocked by pi-guides read-only mode",
+        });
+    });
+});
+
+test("guide-session clear removes the read-only guard", async () => {
+    await withTempRoot(async (rootPath) => {
+        writeGuidesConfig(rootPath, {
+            version: 1,
+            profile: "core",
+            mode: "compact",
+            additions: [],
+            removals: [],
+            variants: {},
+        });
+        const sessionCtx = createCommandContext(rootPath);
+        await guideSession.handler("review", sessionCtx);
+
+        const clearCtx = createCommandContext(rootPath);
+        await guideSession.handler("clear", clearCtx);
+
+        const toolCtx = createCommandContext(rootPath);
+        const result = await toolCall(
+            { toolName: "edit", input: { path: join(rootPath, "README.md") } },
+            toolCtx,
+        );
+        assert.equal(result, undefined);
     });
 });
 

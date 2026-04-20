@@ -39,6 +39,28 @@
           "mode": {
             "type": "string",
             "enum": ["compact", "full"]
+          },
+          "scope": {
+            "type": "string",
+            "enum": ["baseline", "overlay", "any"]
+          },
+          "behavior": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "writePolicy": {
+                "type": "string",
+                "enum": ["normal", "read-only"]
+              },
+              "toolMode": {
+                "type": "string",
+                "enum": ["normal", "conservative"]
+              },
+              "responseContract": {
+                "type": "string",
+                "enum": ["default", "review-findings"]
+              }
+            }
           }
         },
         "required": ["title", "guides"]
