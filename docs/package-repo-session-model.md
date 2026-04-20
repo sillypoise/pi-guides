@@ -3,7 +3,7 @@
 This document explains which guide-system files live in the package, which live in each consumer
 repository, and how runtime state is composed.
 
-## The Three Layers
+## The Four Layers
 
 ### 1. Package catalog layer
 
@@ -56,6 +56,21 @@ Responsibilities:
 - temporarily activate an overlay profile;
 - temporarily change runtime behavior for the session;
 - layer on top of the repo baseline rather than replace it.
+
+### 4. Next-turn overlay layer
+
+This state is also transient, but even narrower than session state.
+It applies to the next normal agent turn only.
+
+Source today:
+
+- `/guide-next <profile-id|clear>`
+
+Responsibilities:
+
+- temporarily activate an overlay profile for one turn only;
+- layer on top of the repo baseline and any active session overlay;
+- clear automatically after that turn ends.
 
 ## Which Files Belong Where
 
@@ -160,6 +175,26 @@ Effects:
 - removes the transient session overlay;
 - returns runtime behavior to the repo baseline.
 
+### `/guide-next <profile-id>`
+
+Queues a one-turn overlay for the next normal agent turn only.
+
+Effects:
+
+- does not rewrite `.pi/guides.json`;
+- does not replace the session overlay;
+- layers on top of the repo baseline and any active session overlay;
+- clears automatically when that turn ends.
+
+### `/guide-next clear`
+
+Clears the pending next-turn overlay.
+
+Effects:
+
+- does not rewrite `.pi/guides.json`;
+- removes the pending one-turn overlay before it is consumed.
+
 ## Baseline vs Overlay
 
 ### Baseline profile
@@ -202,13 +237,15 @@ This is additive overlay behavior, not baseline replacement.
 
 ## State Transition Table
 
-| Action | Package catalog | Repo baseline `.pi/guides.json` | Session overlay | Effective runtime |
-|---|---|---|---|---|
-| `/guide-init` | unchanged | created if missing | unchanged | baseline becomes available |
-| `/guide-profile core` | unchanged | set baseline to `core` | unchanged | baseline changes |
-| `/guide-mode full` | unchanged | set baseline mode to `full` | unchanged | baseline mode changes |
-| `/guide-session review` | unchanged | unchanged | set to `review` | baseline + review overlay |
-| `/guide-session clear` | unchanged | unchanged | cleared | back to baseline only |
+| Action | Package catalog | Repo baseline `.pi/guides.json` | Session overlay | Next-turn overlay | Effective runtime |
+|---|---|---|---|---|---|
+| `/guide-init` | unchanged | created if missing | unchanged | unchanged | baseline becomes available |
+| `/guide-profile core` | unchanged | set baseline to `core` | unchanged | unchanged | baseline changes |
+| `/guide-mode full` | unchanged | set baseline mode to `full` | unchanged | unchanged | baseline mode changes |
+| `/guide-session review` | unchanged | unchanged | set to `review` | unchanged | baseline + review overlay |
+| `/guide-session clear` | unchanged | unchanged | cleared | unchanged | back to baseline only |
+| `/guide-next review` | unchanged | unchanged | unchanged | set to `review` | next turn gets baseline + pending overlay |
+| `/guide-next clear` | unchanged | unchanged | unchanged | cleared | pending next-turn overlay removed |
 
 ## Important Mental Model
 
@@ -217,6 +254,7 @@ Use this compact summary:
 - package registry defines what exists;
 - repo config chooses the baseline;
 - session overlay temporarily layers on top of that baseline;
+- next-turn overlay layers on top of both for one turn only;
 - the extension computes one effective activation state for each turn.
 
 ## Current Foundation Profiles
@@ -243,5 +281,6 @@ Use this compact summary:
 
 `/guide-profile` replaces the repo baseline.
 `/guide-session` overlays on top of the repo baseline.
+`/guide-next` overlays on top of the repo baseline and session overlay for one turn only.
 The package registry defines the vocabulary, while each repo's `.pi/guides.json` remains the
 persistent source of truth for that repo.

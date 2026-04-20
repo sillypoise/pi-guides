@@ -573,8 +573,21 @@ Current v0.1 behavior:
 - baseline-only profiles are rejected explicitly
 - `clear` removes the active session overlay
 - built-in overlays now include `review`, `migration`, `debug`, `design`, `docs-authoring`, and `release`
-- `review` sets read-only write policy and blocks `edit` and `write` tool calls
+- `review` sets read-only write policy and blocks `edit`, `write`, and mutating `bash` tool calls
 - a no-op activation is detected and reported without reloading
+
+### `/guide-next <profile-id|clear>`
+
+Queues or clears a one-turn overlay for the next normal agent turn only.
+
+Current v0.1 behavior:
+
+- overlay profile ids come from `registry/profiles.json`
+- baseline-only profiles are rejected explicitly
+- `clear` removes the pending next-turn overlay
+- the next-turn overlay stacks on top of the repo baseline and any active session overlay
+- the next-turn overlay is cleared automatically at the end of that turn
+- `review` can therefore be used as a read-only one-turn review mode
 
 ---
 

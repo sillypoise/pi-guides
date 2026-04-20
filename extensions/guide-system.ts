@@ -95,6 +95,8 @@ type ResolvedActiveState = {
     profileTitle: string | null;
     sessionProfile: string | null;
     sessionProfileTitle: string | null;
+    nextProfile: string | null;
+    nextProfileTitle: string | null;
     mode: GuideMode;
     behavior: BehaviorSettings;
     guides: ResolvedGuide[];
@@ -112,6 +114,8 @@ type ResolvedSource = {
     profileTitle: string | null;
     sessionProfile: string | null;
     sessionProfileTitle: string | null;
+    nextProfile: string | null;
+    nextProfileTitle: string | null;
     mode: GuideMode;
     behavior: BehaviorSettings;
     ids: string[];
@@ -173,6 +177,8 @@ const BEGIN_HEADER = "<!-- BEGIN MANAGED GUIDE HEADER -->";
 const END_HEADER = "<!-- END MANAGED GUIDE HEADER -->";
 
 const session_overlay_profiles = new Map<string, string | null>();
+const next_overlay_profiles = new Map<string, string | null>();
+const consumed_next_overlay_cwds = new Set<string>();
 
 let registryCache: GuideRegistry | null = null;
 let profilesCache: ProfileRegistry | null = null;
@@ -562,12 +568,42 @@ function setSessionOverlayProfileId(cwd: string, profileId: string | null): void
     session_overlay_profiles.set(cwd, profileId);
 }
 
+function getNextOverlayProfileId(cwd: string): string | null {
+    return next_overlay_profiles.get(cwd) ?? null;
+}
+
+function setNextOverlayProfileId(cwd: string, profileId: string | null): void {
+    if (profileId === null) {
+        next_overlay_profiles.delete(cwd);
+        consumed_next_overlay_cwds.delete(cwd);
+        return;
+    }
+    next_overlay_profiles.set(cwd, profileId);
+}
+
 function allowedAsBaselineProfile(profile: ProfileRecord): boolean {
     return profile.scope !== "overlay";
 }
 
 function allowedAsSessionOverlayProfile(profile: ProfileRecord): boolean {
     return profile.scope === "overlay" || profile.scope === "any";
+}
+
+function isMutatingBashCommand(command: string): boolean {
+    const mutatingPatterns = [
+        /(^|[;&|]\s*)(rm|mv|cp|touch|mkdir|rmdir|install|chmod|chown|ln)\b/u,
+        /(^|[;&|]\s*)sed\s+-i\b/u,
+        /(^|[;&|]\s*)perl\s+-pi\b/u,
+        /(^|[;&|]\s*)git\s+(apply|am|commit|checkout|switch|restore|reset|revert|clean)\b/u,
+        /(^|[;&|]\s*)tee\b/u,
+        /(^|[;&|]\s*)cat\s+.*>+/u,
+        /(^|[;&|]\s*)echo\s+.*>+/u,
+        /(^|[;&|]\s*)printf\s+.*>+/u,
+        /(^|[;&|]\s*)\S+\s*>\s*[^&]/u,
+        /(^|[;&|]\s*)\S+\s*>>\s*[^&]/u,
+    ];
+
+    return mutatingPatterns.some((pattern) => pattern.test(command));
 }
 
 function pickVariant(guide: GuideRecord, mode: GuideMode, explicitVariant?: string): string {
@@ -607,11 +643,14 @@ function formatNamedProfile(profileId: string | null, profileTitle: string | nul
 
 function renderStatus(state: ResolvedState): string {
     if (state.active) {
-        const profile = state.profile ?? "custom";
+        const profileNames = [state.profile ?? "custom"];
         if (state.sessionProfile !== null) {
-            return `guides: ${profile} + ${state.sessionProfile} (${state.mode})`;
+            profileNames.push(state.sessionProfile);
         }
-        return `guides: ${profile} (${state.mode})`;
+        if (state.nextProfile !== null) {
+            profileNames.push(state.nextProfile);
+        }
+        return `guides: ${profileNames.join(" + ")} (${state.mode})`;
     }
     if (state.inactiveKind === "error") {
         return "guides: error";
@@ -635,10 +674,26 @@ function rejectDirectGuideModifiers(config: GuideConfig): void {
     }
 }
 
+function resolveOverlayProfile(
+    overlayProfileId: string,
+    overlayKind: "session" | "next",
+    profiles: ProfileRegistry,
+): ProfileRecord {
+    const overlayProfile = profiles.profiles[overlayProfileId];
+    if (!overlayProfile) {
+        throw new Error(`Unknown ${overlayKind} overlay profile '${overlayProfileId}'`);
+    }
+    if (!allowedAsSessionOverlayProfile(overlayProfile)) {
+        throw new Error(`Profile '${overlayProfileId}' is not allowed as a ${overlayKind} overlay`);
+    }
+    return overlayProfile;
+}
+
 function resolveProfileSource(
     config: GuideConfig,
     profiles: ProfileRegistry,
     sessionOverlayProfileId: string | null,
+    nextOverlayProfileId: string | null,
 ): ResolvedSource {
     const profileId = config.profile;
     if (profileId === undefined) {
@@ -656,20 +711,22 @@ function resolveProfileSource(
     let mode = config.mode ?? profile.mode ?? "compact";
     let behavior = mergeBehaviorSettings(DEFAULT_BEHAVIOR, profile.behavior);
     let sessionProfileTitle: string | null = null;
+    let nextProfileTitle: string | null = null;
 
     if (sessionOverlayProfileId !== null) {
-        const sessionProfile = profiles.profiles[sessionOverlayProfileId];
-        if (!sessionProfile) {
-            throw new Error(`Unknown session overlay profile '${sessionOverlayProfileId}'`);
-        }
-        if (!allowedAsSessionOverlayProfile(sessionProfile)) {
-            throw new Error(`Profile '${sessionOverlayProfileId}' is not allowed as a session overlay`);
-        }
-
+        const sessionProfile = resolveOverlayProfile(sessionOverlayProfileId, "session", profiles);
         ids = dedupe([...ids, ...sessionProfile.guides]);
         mode = sessionProfile.mode ?? mode;
         behavior = mergeBehaviorSettings(behavior, sessionProfile.behavior);
         sessionProfileTitle = sessionProfile.title;
+    }
+
+    if (nextOverlayProfileId !== null) {
+        const nextProfile = resolveOverlayProfile(nextOverlayProfileId, "next", profiles);
+        ids = dedupe([...ids, ...nextProfile.guides]);
+        mode = nextProfile.mode ?? mode;
+        behavior = mergeBehaviorSettings(behavior, nextProfile.behavior);
+        nextProfileTitle = nextProfile.title;
     }
 
     return {
@@ -677,6 +734,8 @@ function resolveProfileSource(
         profileTitle: profile.title,
         sessionProfile: sessionOverlayProfileId,
         sessionProfileTitle,
+        nextProfile: nextOverlayProfileId,
+        nextProfileTitle,
         mode,
         behavior,
         ids,
@@ -687,26 +746,29 @@ function resolveDirectGuideSource(
     config: GuideConfig,
     profiles: ProfileRegistry,
     sessionOverlayProfileId: string | null,
+    nextOverlayProfileId: string | null,
 ): ResolvedSource {
     rejectDirectGuideModifiers(config);
     let ids = dedupe(config.guides ?? []);
     let mode = config.mode ?? "compact";
     let behavior = { ...DEFAULT_BEHAVIOR };
     let sessionProfileTitle: string | null = null;
+    let nextProfileTitle: string | null = null;
 
     if (sessionOverlayProfileId !== null) {
-        const sessionProfile = profiles.profiles[sessionOverlayProfileId];
-        if (!sessionProfile) {
-            throw new Error(`Unknown session overlay profile '${sessionOverlayProfileId}'`);
-        }
-        if (!allowedAsSessionOverlayProfile(sessionProfile)) {
-            throw new Error(`Profile '${sessionOverlayProfileId}' is not allowed as a session overlay`);
-        }
-
+        const sessionProfile = resolveOverlayProfile(sessionOverlayProfileId, "session", profiles);
         ids = dedupe([...ids, ...sessionProfile.guides]);
         mode = sessionProfile.mode ?? mode;
         behavior = mergeBehaviorSettings(behavior, sessionProfile.behavior);
         sessionProfileTitle = sessionProfile.title;
+    }
+
+    if (nextOverlayProfileId !== null) {
+        const nextProfile = resolveOverlayProfile(nextOverlayProfileId, "next", profiles);
+        ids = dedupe([...ids, ...nextProfile.guides]);
+        mode = nextProfile.mode ?? mode;
+        behavior = mergeBehaviorSettings(behavior, nextProfile.behavior);
+        nextProfileTitle = nextProfile.title;
     }
 
     return {
@@ -714,6 +776,8 @@ function resolveDirectGuideSource(
         profileTitle: null,
         sessionProfile: sessionOverlayProfileId,
         sessionProfileTitle,
+        nextProfile: nextOverlayProfileId,
+        nextProfileTitle,
         mode,
         behavior,
         ids,
@@ -724,19 +788,30 @@ function resolveSourceIds(
     config: GuideConfig,
     profiles: ProfileRegistry,
     sessionOverlayProfileId: string | null,
+    nextOverlayProfileId: string | null,
 ): ResolvedSource {
     if (config.profile !== undefined) {
         if (config.guides !== undefined) {
             throw new Error(".pi/guides.json cannot define both 'profile' and 'guides'");
         }
-        return resolveProfileSource(config, profiles, sessionOverlayProfileId);
+        return resolveProfileSource(
+            config,
+            profiles,
+            sessionOverlayProfileId,
+            nextOverlayProfileId,
+        );
     }
 
     if (config.guides === undefined) {
         throw new Error(".pi/guides.json must define either 'profile' or 'guides'");
     }
 
-    return resolveDirectGuideSource(config, profiles, sessionOverlayProfileId);
+    return resolveDirectGuideSource(
+        config,
+        profiles,
+        sessionOverlayProfileId,
+        nextOverlayProfileId,
+    );
 }
 
 function buildPrecedenceRanks(registry: GuideRegistry): Map<PrecedenceId, number> {
@@ -809,8 +884,14 @@ async function resolveActiveState(
     registry: GuideRegistry,
     profiles: ProfileRegistry,
     sessionOverlayProfileId: string | null,
+    nextOverlayProfileId: string | null,
 ): Promise<ResolvedActiveState> {
-    const source = resolveSourceIds(config, profiles, sessionOverlayProfileId);
+    const source = resolveSourceIds(
+        config,
+        profiles,
+        sessionOverlayProfileId,
+        nextOverlayProfileId,
+    );
     const guides = await resolveGuides(source, config.variants, registry);
     return {
         active: true,
@@ -819,6 +900,8 @@ async function resolveActiveState(
         profileTitle: source.profileTitle,
         sessionProfile: source.sessionProfile,
         sessionProfileTitle: source.sessionProfileTitle,
+        nextProfile: source.nextProfile,
+        nextProfileTitle: source.nextProfileTitle,
         mode: source.mode,
         behavior: source.behavior,
         guides,
@@ -847,12 +930,14 @@ async function resolveState(cwd: string): Promise<ResolvedState> {
         }
 
         const sessionOverlayProfileId = getSessionOverlayProfileId(cwd);
+        const nextOverlayProfileId = getNextOverlayProfileId(cwd);
         return await resolveActiveState(
             configPath,
             config,
             registry,
             profiles,
             sessionOverlayProfileId,
+            nextOverlayProfileId,
         );
     } catch (error) {
         const reason = error instanceof Error ? error.message : String(error);
@@ -914,6 +999,9 @@ async function buildInjectedPrompt(state: ResolvedActiveState, registry: GuideRe
 
     if (state.sessionProfile !== null) {
         lines.push(`Session Overlay: ${state.sessionProfile}`);
+    }
+    if (state.nextProfile !== null) {
+        lines.push(`Next Overlay: ${state.nextProfile}`);
     }
 
     lines.push(`Mode: ${state.mode}`);
@@ -1012,6 +1100,9 @@ async function buildGuidesWidgetLines(cwd: string, state: ResolvedState): Promis
             `session overlay: ${formatNamedProfile(state.sessionProfile, state.sessionProfileTitle)}`,
         );
     }
+    if (state.nextProfile !== null) {
+        lines.push(`next overlay: ${formatNamedProfile(state.nextProfile, state.nextProfileTitle)}`);
+    }
 
     lines.push(`write policy: ${state.behavior.writePolicy}`);
     lines.push(`tool mode: ${state.behavior.toolMode}`);
@@ -1084,6 +1175,11 @@ function widgetLines(state: ResolvedState): string[] {
     if (state.sessionProfile !== null) {
         lines.push(
             `session overlay: ${state.sessionProfile}${state.sessionProfileTitle ? ` (${state.sessionProfileTitle})` : ""}`,
+        );
+    }
+    if (state.nextProfile !== null) {
+        lines.push(
+            `next overlay: ${state.nextProfile}${state.nextProfileTitle ? ` (${state.nextProfileTitle})` : ""}`,
         );
     }
     lines.push(`write policy: ${state.behavior.writePolicy}`);
@@ -1458,6 +1554,23 @@ async function showSessionProfilesWidget(
     setGuidesWidget(ctx, lines);
 }
 
+async function showNextProfilesWidget(ctx: ExtensionCommandContext, state: ResolvedState): Promise<void> {
+    const profiles = await loadProfiles();
+    const lines = [
+        "pi guide next",
+        `status: ${renderStatus(state)}`,
+        `config: ${state.configPath}`,
+    ];
+    if (state.active && state.nextProfile !== null) {
+        lines.push(`next overlay: ${formatNamedProfile(state.nextProfile, state.nextProfileTitle)}`);
+    } else {
+        lines.push("next overlay: none");
+    }
+    lines.push("usage: /guide-next <profile-id|clear>");
+    lines.push(...buildAvailableProfileLines(profiles, "overlay"));
+    setGuidesWidget(ctx, lines);
+}
+
 function guideConfigContent(config: GuideConfig): string {
     return JSON.stringify(cloneGuideConfig(config), null, 2);
 }
@@ -1550,6 +1663,57 @@ async function runGuideSession(
     const nextState = await refreshStatus(ctx);
     await showGuidesWidget(ctx, nextState);
     ctx.ui.notify(`guide-session: activated overlay '${profileId}' for this session`, "success");
+}
+
+async function runGuideNext(
+    ctx: ExtensionCommandContext,
+    args: string | undefined,
+): Promise<void> {
+    const state = await refreshStatus(ctx);
+    const parts = splitArgs(args);
+    if (parts.length === 0) {
+        await showNextProfilesWidget(ctx, state);
+        ctx.ui.notify("guide-next: specify an overlay profile id or 'clear'", "info");
+        return;
+    }
+
+    const profileId = parts[0];
+    if (profileId === "clear") {
+        if (!state.active || state.nextProfile === null) {
+            await showNextProfilesWidget(ctx, state);
+            ctx.ui.notify("guide-next: no next-turn overlay is active", "info");
+            return;
+        }
+
+        setNextOverlayProfileId(ctx.cwd, null);
+        const nextState = await refreshStatus(ctx);
+        await showGuidesWidget(ctx, nextState);
+        ctx.ui.notify("guide-next: cleared the pending next-turn overlay", "success");
+        return;
+    }
+
+    const profiles = await loadProfiles();
+    const profile = profiles.profiles[profileId];
+    if (profile === undefined) {
+        await showNextProfilesWidget(ctx, state);
+        ctx.ui.notify(`guide-next: unknown profile '${profileId}'`, "warning");
+        return;
+    }
+    if (!allowedAsSessionOverlayProfile(profile)) {
+        await showNextProfilesWidget(ctx, state);
+        ctx.ui.notify(`guide-next: profile '${profileId}' is not an overlay profile`, "warning");
+        return;
+    }
+    if (state.active && state.nextProfile === profileId) {
+        await showNextProfilesWidget(ctx, state);
+        ctx.ui.notify(`guide-next: overlay '${profileId}' is already pending`, "info");
+        return;
+    }
+
+    setNextOverlayProfileId(ctx.cwd, profileId);
+    const nextState = await refreshStatus(ctx);
+    await showGuidesWidget(ctx, nextState);
+    ctx.ui.notify(`guide-next: queued overlay '${profileId}' for the next turn`, "success");
 }
 
 async function runGuideProfile(ctx: ExtensionCommandContext, args: string | undefined): Promise<void> {
@@ -1675,6 +1839,13 @@ export default function guideSystemExtension(pi: ExtensionAPI) {
         },
     });
 
+    pi.registerCommand("guide-next", {
+        description: "Queue a temporary guide overlay for the next turn only",
+        handler: async (args, ctx) => {
+            await runGuideNext(ctx, args);
+        },
+    });
+
     pi.on("session_start", async (_event, ctx) => {
         const sessionEntries = ctx.sessionManager?.getEntries?.() ?? [];
         const sessionOverlayEntry = sessionEntries
@@ -1701,6 +1872,9 @@ export default function guideSystemExtension(pi: ExtensionAPI) {
         if (!state.active) {
             return;
         }
+        if (state.nextProfile !== null) {
+            consumed_next_overlay_cwds.add(ctx.cwd);
+        }
 
         const registry = await loadRegistry();
         const injectedPrompt = await buildInjectedPrompt(state, registry);
@@ -1717,17 +1891,38 @@ export default function guideSystemExtension(pi: ExtensionAPI) {
         if (state.behavior.writePolicy !== "read-only") {
             return undefined;
         }
-        if (event.toolName !== "edit" && event.toolName !== "write") {
+
+        if (event.toolName === "edit" || event.toolName === "write") {
+            const path = typeof event.input.path === "string" ? event.input.path : "unknown path";
+            ctx.ui.notify(`guide-session: blocked write in read-only mode: ${path}`, "warning");
+            return { block: true, reason: "Blocked by pi-guides read-only mode" };
+        }
+
+        if (event.toolName !== "bash") {
             return undefined;
         }
 
-        const path = typeof event.input.path === "string" ? event.input.path : "unknown path";
-        ctx.ui.notify(`guide-session: blocked write in read-only mode: ${path}`, "warning");
-        return { block: true, reason: "Blocked by pi-guides read-only mode" };
+        const command = typeof event.input.command === "string" ? event.input.command : "";
+        if (!isMutatingBashCommand(command)) {
+            return undefined;
+        }
+
+        ctx.ui.notify("guide-session: blocked mutating bash command in read-only mode", "warning");
+        return { block: true, reason: "Blocked mutating bash by pi-guides read-only mode" };
+    });
+
+    pi.on("turn_end", async (_event, ctx) => {
+        if (!consumed_next_overlay_cwds.has(ctx.cwd)) {
+            return;
+        }
+
+        setNextOverlayProfileId(ctx.cwd, null);
+        await refreshStatus(ctx);
     });
 
     pi.on("session_shutdown", async (_event, ctx) => {
         setSessionOverlayProfileId(ctx.cwd, null);
+        setNextOverlayProfileId(ctx.cwd, null);
         clearUi(ctx);
     });
 }

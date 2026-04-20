@@ -135,13 +135,15 @@ const guideSync = commands.get("guide-sync");
 const guideProfile = commands.get("guide-profile");
 const guideMode = commands.get("guide-mode");
 const guideSession = commands.get("guide-session");
+const guideNext = commands.get("guide-next");
 const beforeAgentStart = events.get("before_agent_start");
 const toolCall = events.get("tool_call");
+const turnEnd = events.get("turn_end");
 
-if (!guideInit || !guideSync || !guideProfile || !guideMode || !guideSession) {
+if (!guideInit || !guideSync || !guideProfile || !guideMode || !guideSession || !guideNext) {
     throw new Error("expected guide commands to be registered");
 }
-if (!beforeAgentStart || !toolCall) {
+if (!beforeAgentStart || !toolCall || !turnEnd) {
     throw new Error("expected guide events to be registered");
 }
 
@@ -401,7 +403,7 @@ test("before_agent_start injects review-mode behavior guidance", async () => {
     });
 });
 
-test("tool_call blocks edit and write in review read-only mode", async () => {
+test("tool_call blocks edit, write, and mutating bash in review read-only mode", async () => {
     await withTempRoot(async (rootPath) => {
         writeGuidesConfig(rootPath, {
             version: 1,
@@ -433,6 +435,75 @@ test("tool_call blocks edit and write in review read-only mode", async () => {
             block: true,
             reason: "Blocked by pi-guides read-only mode",
         });
+
+        const bashCtx = createCommandContext(rootPath);
+        const bashResult = await toolCall(
+            { toolName: "bash", input: { command: "echo test > README.md" } },
+            bashCtx,
+        );
+        assert.deepEqual(bashResult, {
+            block: true,
+            reason: "Blocked mutating bash by pi-guides read-only mode",
+        });
+
+        const safeBashCtx = createCommandContext(rootPath);
+        const safeBashResult = await toolCall(
+            { toolName: "bash", input: { command: "rg tigerstyle README.md" } },
+            safeBashCtx,
+        );
+        assert.equal(safeBashResult, undefined);
+    });
+});
+
+test("guide-next activates an overlay for the next turn only", async () => {
+    await withTempRoot(async (rootPath) => {
+        writeGuidesConfig(rootPath, {
+            version: 1,
+            profile: "coreplus",
+            mode: "compact",
+            additions: [],
+            removals: [],
+            variants: {},
+        });
+
+        const nextCtx = createCommandContext(rootPath);
+        await guideNext.handler("review", nextCtx);
+
+        const widgetLines = nextCtx.widgets.at(-1)?.value;
+        assert.ok(Array.isArray(widgetLines));
+        assert.ok(widgetLines.includes("next overlay: review (Review)"));
+        assert.ok(widgetLines.includes("write policy: read-only"));
+
+        const eventCtx = createCommandContext(rootPath);
+        const result = await beforeAgentStart(
+            { systemPrompt: "Base system prompt" },
+            eventCtx,
+        );
+        assert.equal(typeof result?.systemPrompt, "string");
+        assert.match(result.systemPrompt, /Next Overlay: review/);
+        assert.match(result.systemPrompt, /Write Policy: read-only/);
+
+        const duringTurnCtx = createCommandContext(rootPath);
+        const duringTurnResult = await toolCall(
+            { toolName: "bash", input: { command: "echo test > README.md" } },
+            duringTurnCtx,
+        );
+        assert.deepEqual(duringTurnResult, {
+            block: true,
+            reason: "Blocked mutating bash by pi-guides read-only mode",
+        });
+
+        const endCtx = createCommandContext(rootPath);
+        await turnEnd({}, endCtx);
+
+        const afterTurnCtx = createCommandContext(rootPath);
+        const afterTurnPrompt = await beforeAgentStart(
+            { systemPrompt: "Base system prompt" },
+            afterTurnCtx,
+        );
+        assert.equal(typeof afterTurnPrompt?.systemPrompt, "string");
+        assert.doesNotMatch(afterTurnPrompt.systemPrompt, /Next Overlay: review/);
+        assert.match(afterTurnPrompt.systemPrompt, /Profile: coreplus/);
     });
 });
 
