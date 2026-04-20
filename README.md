@@ -19,6 +19,14 @@ Current v0.1 scope:
   - `files/tigerstyle-strict-compact.md`
   - `files/tigerstyle-strict-full.md`
 
+Design notes for the next phase live in:
+
+- `docs/context-activation-engine.md`
+- `docs/content-placement.md`
+- `docs/activation-state-model.md`
+- `docs/profile-schema-v2.md`
+- `docs/profile-catalog.md`
+
 Not included yet:
 
 - language-specific TigerStyle variants
