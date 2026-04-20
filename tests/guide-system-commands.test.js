@@ -170,7 +170,7 @@ test("guide-init --no-settings bootstraps repo-local files without project setti
 test("guide-init with explicit package source writes project settings and widget guidance", async () => {
     await withTempRoot(async (rootPath) => {
         const ctx = createCommandContext(rootPath);
-        const packageSource = "git:git@github.com:sillypoise/pi-guides@v0.1.2";
+        const packageSource = "git:git@github.com:sillypoise/pi-guides@v0.2.0";
 
         await guideInit.handler(packageSource, ctx);
 
@@ -226,7 +226,7 @@ test("guide-init writes the default git package source when settings are request
             assert.equal(ctx.reloadCount, 1);
             const settings = JSON.parse(readFileSync(join(rootPath, ".pi", "settings.json"), "utf8"));
             assert.deepEqual(settings, {
-                packages: ["git:git@github.com:sillypoise/pi-guides@v0.1.2"],
+                packages: ["git:git@github.com:sillypoise/pi-guides@v0.2.0"],
             });
         });
     });
@@ -285,7 +285,7 @@ test("guide-init rejects conflicting --dev and explicit source arguments", async
     await withTempRoot(async (rootPath) => {
         const ctx = createCommandContext(rootPath);
 
-        await guideInit.handler("--dev git:git@github.com:sillypoise/pi-guides@v0.1.2", ctx);
+        await guideInit.handler("--dev git:git@github.com:sillypoise/pi-guides@v0.2.0", ctx);
 
         assert.equal(ctx.reloadCount, 0);
         assert.ok(

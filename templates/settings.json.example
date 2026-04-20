@@ -1,5 +1,5 @@
 {
   "packages": [
-    "git:git@github.com:sillypoise/pi-guides@v0.1.2"
+    "git:git@github.com:sillypoise/pi-guides@v0.2.0"
   ]
 }
