@@ -46,6 +46,7 @@ Design notes for the next phase live in:
 - `docs/guides-config-v2.md`
 - `docs/runtime-behavior-flags.md`
 - `docs/profile-catalog.md`
+- `docs/port-matrix.md`
 
 Not included yet:
 
@@ -485,7 +486,10 @@ then the guides should be active for that prompt.
 
 Shows the currently resolved guide state in a structured widget and updates footer status.
 
-The widget includes:
+By default, the always-visible guides widget is a compact one-line summary.
+Running `/guides` expands it into the full multi-line detail view.
+
+The expanded widget includes:
 
 - current resolved status
 - config path

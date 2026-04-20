@@ -130,20 +130,22 @@ function readGuidesConfig(rootPath) {
 }
 
 const { commands, events } = createPiHarness();
+const guides = commands.get("guides");
 const guideInit = commands.get("guide-init");
 const guideSync = commands.get("guide-sync");
 const guideProfile = commands.get("guide-profile");
 const guideMode = commands.get("guide-mode");
 const guideSession = commands.get("guide-session");
 const guideNext = commands.get("guide-next");
+const sessionStart = events.get("session_start");
 const beforeAgentStart = events.get("before_agent_start");
 const toolCall = events.get("tool_call");
 const turnEnd = events.get("turn_end");
 
-if (!guideInit || !guideSync || !guideProfile || !guideMode || !guideSession || !guideNext) {
+if (!guides || !guideInit || !guideSync || !guideProfile || !guideMode || !guideSession || !guideNext) {
     throw new Error("expected guide commands to be registered");
 }
-if (!beforeAgentStart || !toolCall || !turnEnd) {
+if (!sessionStart || !beforeAgentStart || !toolCall || !turnEnd) {
     throw new Error("expected guide events to be registered");
 }
 
@@ -308,6 +310,47 @@ test("guide-init rejects unknown options and shows usage widget", async () => {
         const widgetLines = ctx.widgets.at(-1)?.value;
         assert.ok(Array.isArray(widgetLines));
         assert.ok(widgetLines.includes("usage: /guide-init [package-source] [--no-settings] [--dev]"));
+    });
+});
+
+test("session_start sets a compact one-line widget by default", async () => {
+    await withTempRoot(async (rootPath) => {
+        writeGuidesConfig(rootPath, {
+            version: 1,
+            profile: "coreplus",
+            mode: "compact",
+            additions: [],
+            removals: [],
+            variants: {},
+        });
+
+        const ctx = createCommandContext(rootPath);
+        await sessionStart({}, ctx);
+
+        const widgetLines = ctx.widgets.at(-1)?.value;
+        assert.deepEqual(widgetLines, ["guides: coreplus | compact | 5 guides"]);
+    });
+});
+
+test("guides command shows expanded detail instead of the compact widget", async () => {
+    await withTempRoot(async (rootPath) => {
+        writeGuidesConfig(rootPath, {
+            version: 1,
+            profile: "coreplus",
+            mode: "compact",
+            additions: [],
+            removals: [],
+            variants: {},
+        });
+
+        const ctx = createCommandContext(rootPath);
+        await guides.handler("", ctx);
+
+        const widgetLines = ctx.widgets.at(-1)?.value;
+        assert.ok(Array.isArray(widgetLines));
+        assert.ok(widgetLines.includes("pi guides"));
+        assert.ok(widgetLines.includes("profile: coreplus (CorePlus)"));
+        assert.ok(widgetLines.includes("resolved guides:"));
     });
 });
 

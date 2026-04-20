@@ -1080,7 +1080,7 @@ function buildAvailableProfileLines(
 
 async function buildGuidesWidgetLines(cwd: string, state: ResolvedState): Promise<string[]> {
     if (!state.active) {
-        return widgetLines(state);
+        return inactiveWidgetLines(state);
     }
 
     const registry = await loadRegistry();
@@ -1152,44 +1152,53 @@ function clearUi(ctx: ExtensionContext): void {
 async function refreshStatus(ctx: ExtensionContext): Promise<ResolvedState> {
     const state = await resolveState(ctx.cwd);
     setStatus(ctx, state);
+    setGuidesWidget(ctx, compactWidgetLines(state));
     return state;
 }
 
-function widgetLines(state: ResolvedState): string[] {
-    if (!state.active) {
-        return [
-            "pi guides",
-            `status: ${renderStatus(state)}`,
-            `reason: ${state.reason}`,
-            `config: ${state.configPath}`,
-        ];
-    }
-
-    const lines = [
-        "pi guides",
-        `status: ${renderStatus(state)}`,
-        `config: ${state.configPath}`,
-        `profile: ${state.profile ?? "custom"}${state.profileTitle ? ` (${state.profileTitle})` : ""}`,
-        `mode: ${state.mode}`,
-    ];
+function formatCompactProfileStack(state: ResolvedActiveState): string {
+    const profileNames = [state.profile ?? "custom"];
     if (state.sessionProfile !== null) {
-        lines.push(
-            `session overlay: ${state.sessionProfile}${state.sessionProfileTitle ? ` (${state.sessionProfileTitle})` : ""}`,
-        );
+        profileNames.push(state.sessionProfile);
     }
     if (state.nextProfile !== null) {
-        lines.push(
-            `next overlay: ${state.nextProfile}${state.nextProfileTitle ? ` (${state.nextProfileTitle})` : ""}`,
-        );
+        profileNames.push(`next:${state.nextProfile}`);
     }
-    lines.push(`write policy: ${state.behavior.writePolicy}`);
-    lines.push(`tool mode: ${state.behavior.toolMode}`);
-    lines.push(`response contract: ${state.behavior.responseContract}`);
-    lines.push("active:");
-    for (const guide of state.guides) {
-        lines.push(`- ${guide.id} (${guide.variant}) -> ${guide.relativePath}`);
+    return profileNames.join(" + ");
+}
+
+function compactWidgetLines(state: ResolvedState): string[] {
+    if (!state.active) {
+        if (state.inactiveKind === "error") {
+            return [`guides: error | ${state.reason}`];
+        }
+        return [`guides: off | ${state.reason}`];
     }
-    return lines;
+
+    const parts = [
+        `guides: ${formatCompactProfileStack(state)}`,
+        state.mode,
+    ];
+    if (state.behavior.writePolicy === "read-only") {
+        parts.push("ro");
+    }
+    if (state.behavior.toolMode !== "normal") {
+        parts.push(`tools:${state.behavior.toolMode}`);
+    }
+    if (state.behavior.responseContract !== "default") {
+        parts.push(`response:${state.behavior.responseContract}`);
+    }
+    parts.push(`${state.guides.length} guides`);
+    return [parts.join(" | ")];
+}
+
+function inactiveWidgetLines(state: ResolvedInactiveState): string[] {
+    return [
+        "pi guides",
+        `status: ${renderStatus(state)}`,
+        `reason: ${state.reason}`,
+        `config: ${state.configPath}`,
+    ];
 }
 
 async function ensureParentDir(path: string): Promise<void> {
