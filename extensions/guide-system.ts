@@ -7,6 +7,7 @@ import type {
     ExtensionCommandContext,
     ExtensionContext,
 } from "@mariozechner/pi-coding-agent";
+// Pi TUI imports are deferred to showProfilePicker so tests can load the module without peer deps.
 
 type GuideMode = "compact" | "full";
 type PrecedenceId = "rulebook" | "heuristics" | "playbook" | "framework";
@@ -1580,6 +1581,100 @@ async function showNextProfilesWidget(ctx: ExtensionCommandContext, state: Resol
     setGuidesWidget(ctx, lines);
 }
 
+type ProfilePickerOptions = {
+    includeClear?: boolean;
+};
+
+async function showProfilePicker(
+    ctx: ExtensionCommandContext,
+    scope: "baseline" | "overlay",
+    title: string,
+    options?: ProfilePickerOptions,
+): Promise<string | null> {
+    const profiles = await loadProfiles();
+    const items: Array<{ value: string; label: string; description?: string }> = [];
+
+    if (options?.includeClear) {
+        items.push({
+            value: "clear",
+            label: "(clear)",
+            description: "Clear the active overlay",
+        });
+    }
+
+    for (const [profileId, profile] of Object.entries(profiles.profiles)) {
+        if (scope === "baseline" && !allowedAsBaselineProfile(profile)) {
+            continue;
+        }
+        if (scope === "overlay" && !allowedAsSessionOverlayProfile(profile)) {
+            continue;
+        }
+
+        items.push({
+            value: profileId,
+            label: profileId,
+            description: profile.description ?? "No description.",
+        });
+    }
+
+    if (items.length === 0) {
+        ctx.ui.notify(`No ${scope} profiles available.`, "info");
+        return null;
+    }
+
+    try {
+        const [{ DynamicBorder }, { Container, SelectList, Text }] = await Promise.all([
+            import("@mariozechner/pi-coding-agent"),
+            import("@mariozechner/pi-tui"),
+        ]);
+
+        return await ctx.ui.custom<string | null>((tui, theme, _kb, done) => {
+            const container = new Container();
+            container.addChild(new DynamicBorder((s: string) => theme.fg("accent", s)));
+            container.addChild(new Text(theme.fg("accent", theme.bold(title)), 1, 0));
+
+            const selectList = new SelectList(items, Math.min(items.length, 10), {
+                selectedPrefix: (t: string) => theme.fg("accent", t),
+                selectedText: (t: string) => theme.fg("accent", t),
+                description: (t: string) => theme.fg("muted", t),
+                scrollInfo: (t: string) => theme.fg("dim", t),
+                noMatch: (t: string) => theme.fg("warning", t),
+            });
+
+            selectList.onSelect = (item: { value: string }) => done(item.value);
+            selectList.onCancel = () => done(null);
+
+            container.addChild(selectList);
+            container.addChild(
+                new Text(
+                    theme.fg("dim", "↑↓ navigate • type to filter • enter select • esc cancel"),
+                    1,
+                    0,
+                ),
+            );
+            container.addChild(new DynamicBorder((s: string) => theme.fg("accent", s)));
+
+            return {
+                render: (width: number) => container.render(width),
+                invalidate: () => container.invalidate(),
+                handleInput: (data: string) => {
+                    selectList.handleInput(data);
+                    tui.requestRender();
+                },
+            };
+        });
+    } catch {
+        // Fallback when pi TUI packages are unavailable (e.g., tests or minimal environments).
+        const labels = items.map((item) => item.label);
+        const choice = await ctx.ui.select(title, labels);
+        if (choice === null || choice === undefined) {
+            return null;
+        }
+        const found = items.find((item) => item.label === choice);
+        return found?.value ?? null;
+    }
+}
+
 function guideConfigContent(config: GuideConfig): string {
     return JSON.stringify(cloneGuideConfig(config), null, 2);
 }
@@ -1627,13 +1722,23 @@ async function runGuideSession(
 ): Promise<void> {
     const state = await refreshStatus(ctx);
     const parts = splitArgs(args);
-    if (parts.length === 0) {
-        await showSessionProfilesWidget(ctx, state);
-        ctx.ui.notify("guide-session: specify an overlay profile id or 'clear'", "info");
-        return;
-    }
+    let profileId: string | undefined = parts[0];
 
-    const profileId = parts[0];
+    if (profileId === undefined) {
+        if (ctx.hasUI) {
+            const picked = await showProfilePicker(ctx, "overlay", "Select Session Overlay", {
+                includeClear: true,
+            });
+            if (picked === null) {
+                return;
+            }
+            profileId = picked;
+        } else {
+            await showSessionProfilesWidget(ctx, state);
+            ctx.ui.notify("guide-session: specify an overlay profile id or 'clear'", "info");
+            return;
+        }
+    }
     if (profileId === "clear") {
         if (!state.active || state.sessionProfile === null) {
             await showSessionProfilesWidget(ctx, state);
@@ -1680,13 +1785,23 @@ async function runGuideNext(
 ): Promise<void> {
     const state = await refreshStatus(ctx);
     const parts = splitArgs(args);
-    if (parts.length === 0) {
-        await showNextProfilesWidget(ctx, state);
-        ctx.ui.notify("guide-next: specify an overlay profile id or 'clear'", "info");
-        return;
-    }
+    let profileId: string | undefined = parts[0];
 
-    const profileId = parts[0];
+    if (profileId === undefined) {
+        if (ctx.hasUI) {
+            const picked = await showProfilePicker(ctx, "overlay", "Select Next-Turn Overlay", {
+                includeClear: true,
+            });
+            if (picked === null) {
+                return;
+            }
+            profileId = picked;
+        } else {
+            await showNextProfilesWidget(ctx, state);
+            ctx.ui.notify("guide-next: specify an overlay profile id or 'clear'", "info");
+            return;
+        }
+    }
     if (profileId === "clear") {
         if (!state.active || state.nextProfile === null) {
             await showNextProfilesWidget(ctx, state);
@@ -1728,13 +1843,21 @@ async function runGuideNext(
 async function runGuideProfile(ctx: ExtensionCommandContext, args: string | undefined): Promise<void> {
     const state = await refreshStatus(ctx);
     const parts = splitArgs(args);
-    if (parts.length === 0) {
-        await showProfilesWidget(ctx, state);
-        ctx.ui.notify("guide-profile: specify a profile id to persist it", "info");
-        return;
-    }
+    let profileId: string | undefined = parts[0];
 
-    const profileId = parts[0];
+    if (profileId === undefined) {
+        if (ctx.hasUI) {
+            const picked = await showProfilePicker(ctx, "baseline", "Select Baseline Profile");
+            if (picked === null) {
+                return;
+            }
+            profileId = picked;
+        } else {
+            await showProfilesWidget(ctx, state);
+            ctx.ui.notify("guide-profile: specify a profile id to persist it", "info");
+            return;
+        }
+    }
     const profiles = await loadProfiles();
     const profile = profiles.profiles[profileId];
     if (profile === undefined) {

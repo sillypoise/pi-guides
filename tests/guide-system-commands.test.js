@@ -32,7 +32,7 @@ function createPiHarness() {
     return { commands, events, customEntries };
 }
 
-function createCommandContext(cwd) {
+function createCommandContext(cwd, options = {}) {
     const notifications = [];
     const widgets = [];
     const statuses = [];
@@ -43,7 +43,7 @@ function createCommandContext(cwd) {
         notifications,
         widgets,
         statuses,
-        hasUI: true,
+        hasUI: options.hasUI ?? true,
         sessionManager: {
             getEntries() {
                 return [];
@@ -61,6 +61,12 @@ function createCommandContext(cwd) {
             },
             setWidget(key, value) {
                 widgets.push({ key, value });
+            },
+            custom() {
+                return Promise.resolve(options.customResult ?? null);
+            },
+            select(_title, _labels) {
+                return Promise.resolve(options.customResult ?? null);
             },
         },
         async reload() {
@@ -635,5 +641,115 @@ test("guide-mode persists an explicit mode when the config relied on a profile d
         const config = readGuidesConfig(rootPath);
         assert.equal(ctx.reloadCount, 1);
         assert.equal(config.mode, "compact");
+    });
+});
+
+test("guide-profile with no args uses picker when UI is available", async () => {
+    await withTempRoot(async (rootPath) => {
+        writeGuidesConfig(rootPath, {
+            version: 1,
+            profile: "core",
+            mode: "compact",
+            additions: [],
+            removals: [],
+            variants: {},
+        });
+        const ctx = createCommandContext(rootPath, { customResult: "coreplus" });
+
+        await guideProfile.handler("", ctx);
+
+        const config = readGuidesConfig(rootPath);
+        assert.equal(ctx.reloadCount, 1);
+        assert.equal(config.profile, "coreplus");
+        assert.ok(
+            ctx.notifications.some((entry) => entry.message.includes("wrote profile 'coreplus'")),
+        );
+    });
+});
+
+test("guide-profile with no args and cancelled picker does nothing", async () => {
+    await withTempRoot(async (rootPath) => {
+        writeGuidesConfig(rootPath, {
+            version: 1,
+            profile: "core",
+            mode: "compact",
+            additions: [],
+            removals: [],
+            variants: {},
+        });
+        const beforeContent = readFileSync(join(rootPath, ".pi", "guides.json"), "utf8");
+        const ctx = createCommandContext(rootPath, { customResult: null });
+
+        await guideProfile.handler("", ctx);
+
+        const afterContent = readFileSync(join(rootPath, ".pi", "guides.json"), "utf8");
+        assert.equal(ctx.reloadCount, 0);
+        assert.equal(afterContent, beforeContent);
+    });
+});
+
+test("guide-session with no args uses picker when UI is available", async () => {
+    await withTempRoot(async (rootPath) => {
+        writeGuidesConfig(rootPath, {
+            version: 1,
+            profile: "core",
+            mode: "compact",
+            additions: [],
+            removals: [],
+            variants: {},
+        });
+        const beforeContent = readFileSync(join(rootPath, ".pi", "guides.json"), "utf8");
+        const ctx = createCommandContext(rootPath, { customResult: "review" });
+
+        await guideSession.handler("", ctx);
+
+        const afterContent = readFileSync(join(rootPath, ".pi", "guides.json"), "utf8");
+        assert.equal(ctx.reloadCount, 0);
+        assert.equal(afterContent, beforeContent);
+        assert.ok(
+            ctx.notifications.some((entry) => entry.message.includes("activated overlay 'review'")),
+        );
+    });
+});
+
+test("guide-next with no args uses picker when UI is available", async () => {
+    await withTempRoot(async (rootPath) => {
+        writeGuidesConfig(rootPath, {
+            version: 1,
+            profile: "coreplus",
+            mode: "compact",
+            additions: [],
+            removals: [],
+            variants: {},
+        });
+        const ctx = createCommandContext(rootPath, { customResult: "review" });
+
+        await guideNext.handler("", ctx);
+
+        assert.equal(ctx.reloadCount, 0);
+        assert.ok(
+            ctx.notifications.some((entry) => entry.message.includes("queued overlay 'review'")),
+        );
+    });
+});
+
+test("guide-profile with no args falls back to widget when UI is unavailable", async () => {
+    await withTempRoot(async (rootPath) => {
+        writeGuidesConfig(rootPath, {
+            version: 1,
+            profile: "core",
+            mode: "compact",
+            additions: [],
+            removals: [],
+            variants: {},
+        });
+        const ctx = createCommandContext(rootPath, { hasUI: false });
+
+        await guideProfile.handler("", ctx);
+
+        assert.equal(ctx.reloadCount, 0);
+        assert.ok(
+            ctx.notifications.some((entry) => entry.message.includes("specify a profile id")),
+        );
     });
 });
