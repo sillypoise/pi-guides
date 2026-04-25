@@ -47,6 +47,27 @@
         "type": "string",
         "minLength": 1
       }
+    },
+    "behavior": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "writePolicy": {
+          "type": "string",
+          "enum": ["normal", "read-only"]
+        },
+        "toolMode": {
+          "type": "string",
+          "enum": ["normal", "conservative"]
+        },
+        "responseContract": {
+          "type": "string",
+          "enum": ["default", "review-findings"]
+        },
+        "autoCommit": {
+          "type": "boolean"
+        }
+      }
     }
   },
   "required": ["version"],

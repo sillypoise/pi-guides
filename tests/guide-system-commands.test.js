@@ -143,12 +143,13 @@ const guideProfile = commands.get("guide-profile");
 const guideMode = commands.get("guide-mode");
 const guideSession = commands.get("guide-session");
 const guideNext = commands.get("guide-next");
+const guideAutoCommit = commands.get("guide-auto-commit");
 const sessionStart = events.get("session_start");
 const beforeAgentStart = events.get("before_agent_start");
 const toolCall = events.get("tool_call");
 const turnEnd = events.get("turn_end");
 
-if (!guides || !guideInit || !guideSync || !guideProfile || !guideMode || !guideSession || !guideNext) {
+if (!guides || !guideInit || !guideSync || !guideProfile || !guideMode || !guideSession || !guideNext || !guideAutoCommit) {
     throw new Error("expected guide commands to be registered");
 }
 if (!sessionStart || !beforeAgentStart || !toolCall || !turnEnd) {
@@ -751,5 +752,137 @@ test("guide-profile with no args falls back to widget when UI is unavailable", a
         assert.ok(
             ctx.notifications.some((entry) => entry.message.includes("specify a profile id")),
         );
+    });
+});
+
+test("guide-auto-commit toggles off to on", async () => {
+    await withTempRoot(async (rootPath) => {
+        writeGuidesConfig(rootPath, {
+            version: 1,
+            profile: "core",
+            mode: "compact",
+            additions: [],
+            removals: [],
+            variants: {},
+        });
+        const ctx = createCommandContext(rootPath);
+
+        await guideAutoCommit.handler("", ctx);
+
+        const config = readGuidesConfig(rootPath);
+        assert.equal(ctx.reloadCount, 1);
+        assert.equal(config.behavior?.autoCommit, true);
+        assert.ok(
+            ctx.notifications.some((entry) => entry.message.includes("guide-auto-commit: enabled")),
+        );
+    });
+});
+
+test("guide-auto-commit toggles on to off", async () => {
+    await withTempRoot(async (rootPath) => {
+        writeGuidesConfig(rootPath, {
+            version: 1,
+            profile: "core",
+            mode: "compact",
+            behavior: { autoCommit: true },
+            additions: [],
+            removals: [],
+            variants: {},
+        });
+        const ctx = createCommandContext(rootPath);
+
+        await guideAutoCommit.handler("", ctx);
+
+        const config = readGuidesConfig(rootPath);
+        assert.equal(ctx.reloadCount, 1);
+        assert.equal(config.behavior?.autoCommit, false);
+        assert.ok(
+            ctx.notifications.some((entry) => entry.message.includes("guide-auto-commit: disabled")),
+        );
+    });
+});
+
+test("before_agent_start includes auto-commit instruction when enabled", async () => {
+    await withTempRoot(async (rootPath) => {
+        writeGuidesConfig(rootPath, {
+            version: 1,
+            profile: "core",
+            mode: "compact",
+            behavior: { autoCommit: true },
+            additions: [],
+            removals: [],
+            variants: {},
+        });
+        const ctx = createCommandContext(rootPath);
+        await sessionStart({}, ctx);
+
+        const result = await beforeAgentStart(
+            { systemPrompt: "Base system prompt" },
+            ctx,
+        );
+
+        assert.equal(typeof result?.systemPrompt, "string");
+        assert.match(result.systemPrompt, /create a git commit/);
+    });
+});
+
+test("before_agent_start omits auto-commit instruction when disabled", async () => {
+    await withTempRoot(async (rootPath) => {
+        writeGuidesConfig(rootPath, {
+            version: 1,
+            profile: "core",
+            mode: "compact",
+            additions: [],
+            removals: [],
+            variants: {},
+        });
+        const ctx = createCommandContext(rootPath);
+        await sessionStart({}, ctx);
+
+        const result = await beforeAgentStart(
+            { systemPrompt: "Base system prompt" },
+            ctx,
+        );
+
+        assert.equal(typeof result?.systemPrompt, "string");
+        assert.doesNotMatch(result.systemPrompt, /create a git commit/);
+    });
+});
+
+test("compact widget shows auto-commit when enabled", async () => {
+    await withTempRoot(async (rootPath) => {
+        writeGuidesConfig(rootPath, {
+            version: 1,
+            profile: "coreplus",
+            mode: "compact",
+            behavior: { autoCommit: true },
+            additions: [],
+            removals: [],
+            variants: {},
+        });
+        const ctx = createCommandContext(rootPath);
+        await sessionStart({}, ctx);
+
+        const widgetLines = ctx.widgets.at(-1)?.value;
+        assert.deepEqual(widgetLines, ["guides: coreplus | compact | auto-commit | 5 guides"]);
+    });
+});
+
+test("expanded widget shows auto-commit state", async () => {
+    await withTempRoot(async (rootPath) => {
+        writeGuidesConfig(rootPath, {
+            version: 1,
+            profile: "coreplus",
+            mode: "compact",
+            behavior: { autoCommit: true },
+            additions: [],
+            removals: [],
+            variants: {},
+        });
+        const ctx = createCommandContext(rootPath);
+        await guides.handler("", ctx);
+
+        const widgetLines = ctx.widgets.at(-1)?.value;
+        assert.ok(widgetLines.includes("auto commit: on"));
     });
 });

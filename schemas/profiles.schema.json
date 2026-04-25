@@ -59,6 +59,9 @@
               "responseContract": {
                 "type": "string",
                 "enum": ["default", "review-findings"]
+              },
+              "autoCommit": {
+                "type": "boolean"
               }
             }
           }

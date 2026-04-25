@@ -22,6 +22,7 @@ type BehaviorSettings = {
     writePolicy: WritePolicy;
     toolMode: ToolMode;
     responseContract: ResponseContract;
+    autoCommit: boolean;
 };
 
 type VariantRecord = {
@@ -69,6 +70,7 @@ type GuideConfig = {
     additions?: string[];
     removals?: string[];
     variants?: Record<string, string>;
+    behavior?: Partial<BehaviorSettings>;
 };
 
 type ResolvedGuide = {
@@ -172,6 +174,7 @@ const DEFAULT_BEHAVIOR: BehaviorSettings = {
     writePolicy: "normal",
     toolMode: "normal",
     responseContract: "default",
+    autoCommit: false,
 };
 const SESSION_OVERLAY_ENTRY_TYPE = "pi-guides-session-overlay";
 const BEGIN_HEADER = "<!-- BEGIN MANAGED GUIDE HEADER -->";
@@ -199,6 +202,7 @@ function cloneGuideConfig(config: GuideConfig): GuideConfig {
         additions: config.additions ? [...config.additions] : undefined,
         removals: config.removals ? [...config.removals] : undefined,
         variants: config.variants ? { ...config.variants } : undefined,
+        behavior: config.behavior ? { ...config.behavior } : undefined,
     };
 }
 
@@ -554,6 +558,7 @@ function mergeBehaviorSettings(
         writePolicy: override.writePolicy ?? base.writePolicy,
         toolMode: override.toolMode ?? base.toolMode,
         responseContract: override.responseContract ?? base.responseContract,
+        autoCommit: override.autoCommit ?? base.autoCommit,
     };
 }
 
@@ -711,6 +716,7 @@ function resolveProfileSource(
     let ids = dedupe([...profile.guides, ...additions]).filter((id) => !removals.includes(id));
     let mode = config.mode ?? profile.mode ?? "compact";
     let behavior = mergeBehaviorSettings(DEFAULT_BEHAVIOR, profile.behavior);
+    behavior = mergeBehaviorSettings(behavior, config.behavior);
     let sessionProfileTitle: string | null = null;
     let nextProfileTitle: string | null = null;
 
@@ -753,6 +759,7 @@ function resolveDirectGuideSource(
     let ids = dedupe(config.guides ?? []);
     let mode = config.mode ?? "compact";
     let behavior = { ...DEFAULT_BEHAVIOR };
+    behavior = mergeBehaviorSettings(behavior, config.behavior);
     let sessionProfileTitle: string | null = null;
     let nextProfileTitle: string | null = null;
 
@@ -1024,6 +1031,12 @@ async function buildInjectedPrompt(state: ResolvedActiveState, registry: GuideRe
     if (state.behavior.responseContract === "review-findings") {
         lines.push("Respond as review findings first: issues, risks, and missing boundary checks.");
     }
+    if (state.behavior.autoCommit) {
+        lines.push(
+            "After completing file changes, create a git commit with a descriptive message " +
+            "that summarizes what was changed and why. Do not skip the commit.",
+        );
+    }
     lines.push("");
     lines.push("### Active Guides");
     lines.push(guideList);
@@ -1108,6 +1121,7 @@ async function buildGuidesWidgetLines(cwd: string, state: ResolvedState): Promis
     lines.push(`write policy: ${state.behavior.writePolicy}`);
     lines.push(`tool mode: ${state.behavior.toolMode}`);
     lines.push(`response contract: ${state.behavior.responseContract}`);
+    lines.push(`auto commit: ${state.behavior.autoCommit ? "on" : "off"}`);
 
     if (config.profile !== undefined) {
         lines.push(`config profile: ${config.profile}`);
@@ -1188,6 +1202,9 @@ function compactWidgetLines(state: ResolvedState): string[] {
     }
     if (state.behavior.responseContract !== "default") {
         parts.push(`response:${state.behavior.responseContract}`);
+    }
+    if (state.behavior.autoCommit) {
+        parts.push("auto-commit");
     }
     parts.push(`${state.guides.length} guides`);
     return [parts.join(" | ")];
@@ -1926,6 +1943,40 @@ async function runGuideMode(ctx: ExtensionCommandContext, args: string | undefin
     }
 }
 
+async function runGuideAutoCommit(ctx: ExtensionCommandContext): Promise<void> {
+    const state = await refreshStatus(ctx);
+
+    try {
+        const loadedConfig = await loadGuideConfig(ctx.cwd);
+        const currentAutoCommit = loadedConfig.config.behavior?.autoCommit ?? false;
+        const nextAutoCommit = !currentAutoCommit;
+
+        const nextConfig = cloneGuideConfig(loadedConfig.config);
+        nextConfig.behavior = { ...nextConfig.behavior, autoCommit: nextAutoCommit };
+
+        const currentConfigContent = guideConfigContent(loadedConfig.config);
+        const nextConfigContent = guideConfigContent(nextConfig);
+        if (currentConfigContent === nextConfigContent) {
+            await showGuidesWidget(ctx, state);
+            ctx.ui.notify(
+                `guide-auto-commit: already ${nextAutoCommit ? "on" : "off"}`,
+                "info",
+            );
+            return;
+        }
+
+        await writeGuideConfig(loadedConfig.configPath, nextConfig);
+        ctx.ui.notify(
+            `guide-auto-commit: ${nextAutoCommit ? "enabled" : "disabled"}; reloading runtime`,
+            "success",
+        );
+        await ctx.reload();
+    } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        ctx.ui.notify(`guide-auto-commit: ${message}`, "warning");
+    }
+}
+
 export default function guideSystemExtension(pi: ExtensionAPI) {
     pi.registerCommand("guides", {
         description: "Show resolved pi guide state for this repository",
@@ -1961,6 +2012,13 @@ export default function guideSystemExtension(pi: ExtensionAPI) {
         description: "Persist the active guide mode to .pi/guides.json",
         handler: async (args, ctx) => {
             await runGuideMode(ctx, args);
+        },
+    });
+
+    pi.registerCommand("guide-auto-commit", {
+        description: "Toggle automatic git commit after file changes",
+        handler: async (_args, ctx) => {
+            await runGuideAutoCommit(ctx);
         },
     });
 
