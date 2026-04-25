@@ -96,13 +96,13 @@ Use this when the repository should carry its own package pin.
 2. Run one of:
 
 ```text
-/guide-init git:git@github.com:sillypoise/pi-guides@v0.2.0
+/guide-init git:git@github.com:sillypoise/pi-guides@v0.3.0
 ```
 
 or later, once published to npm:
 
 ```text
-/guide-init npm:@sillypoise/pi-guides@0.2.0
+/guide-init npm:@sillypoise/pi-guides@0.3.0
 ```
 
 3. Inspect the active state:
@@ -279,7 +279,7 @@ Example global pi settings using a pinned git source:
 ```json
 {
   "packages": [
-    "git:git@github.com:sillypoise/pi-guides@v0.2.0"
+    "git:git@github.com:sillypoise/pi-guides@v0.3.0"
   ]
 }
 ```
@@ -289,7 +289,7 @@ Equivalent npm form once published:
 ```json
 {
   "packages": [
-    "npm:@sillypoise/pi-guides@0.2.0"
+    "npm:@sillypoise/pi-guides@0.3.0"
   ]
 }
 ```
@@ -306,7 +306,7 @@ Git example:
 ```json
 {
   "packages": [
-    "git:git@github.com:sillypoise/pi-guides@v0.2.0"
+    "git:git@github.com:sillypoise/pi-guides@v0.3.0"
   ]
 }
 ```
@@ -316,7 +316,7 @@ Npm example once published:
 ```json
 {
   "packages": [
-    "npm:@sillypoise/pi-guides@0.2.0"
+    "npm:@sillypoise/pi-guides@0.3.0"
   ]
 }
 ```
@@ -383,7 +383,7 @@ Example:
 ```json
 {
   "packages": [
-    "git:git@github.com:sillypoise/pi-guides@v0.2.0"
+    "git:git@github.com:sillypoise/pi-guides@v0.3.0"
   ]
 }
 ```
@@ -517,8 +517,8 @@ Current v0.1 behavior:
 - if the package is already available globally, plain `/guide-init` skips `.pi/settings.json` automatically
 - otherwise, plain `/guide-init` writes `.pi/settings.json` using the package git tag by default
 - you can pass an explicit package source, for example:
-  - `/guide-init git:git@github.com:sillypoise/pi-guides@v0.2.0`
-  - `/guide-init npm:@sillypoise/pi-guides@0.2.0`
+  - `/guide-init git:git@github.com:sillypoise/pi-guides@v0.3.0`
+  - `/guide-init npm:@sillypoise/pi-guides@0.3.0`
 - you can use `--dev` to write a configured local package path for testing unreleased changes
 - `--dev` resolves from `PI_GUIDES_DEV_SOURCE` or settings field `piGuidesDevSource`
 - `--dev` cannot be combined with `--no-settings` or an explicit package source
