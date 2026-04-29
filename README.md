@@ -548,7 +548,7 @@ Persists a named profile into `.pi/guides.json` and reloads the runtime.
 Current v0.1 behavior:
 
 - profile ids come from `registry/profiles.json`
-- baseline examples now include `core`, `coreplus`, `frontend`, `backend`, `docs`, and `security-sensitive`
+- baseline examples now include `core`, `coreplus`, `frontend`, `backend`, `docs`, `writing`, and `security-sensitive`
 - if the repo currently uses direct `guides`, the command switches to profile-based config
 - direct-guide-only fields are dropped during that transition
 - invalid profile ids are rejected explicitly
@@ -576,7 +576,7 @@ Current v0.1 behavior:
 - overlay profile ids come from `registry/profiles.json`
 - baseline-only profiles are rejected explicitly
 - `clear` removes the active session overlay
-- built-in overlays now include `review`, `migration`, `debug`, `design`, `docs-authoring`, and `release`
+- built-in overlays now include `review`, `migration`, `debug`, `design`, `docs-authoring`, `essay-writing`, `creative-draft`, `left-turn`, `anki-authoring`, `publish-check`, and `release`
 - `review` sets read-only write policy and blocks `edit`, `write`, and mutating `bash` tool calls
 - a no-op activation is detected and reported without reloading
 

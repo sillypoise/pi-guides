@@ -5,21 +5,34 @@
       "title": "Core",
       "description": "Minimal cross-repo coding baseline built on the language-agnostic TigerStyle rulebook.",
       "scope": "baseline",
-      "guides": ["tigerstyle"],
+      "guides": [
+        "tigerstyle"
+      ],
       "mode": "compact"
     },
     "coreplus": {
       "title": "CorePlus",
       "description": "Good all-rounder baseline that keeps TigerStyle minimality while adding security, contract, change-risk, and epistemic quality.",
       "scope": "baseline",
-      "guides": ["tigerstyle", "security-core", "contract-core", "change-risk", "epistemics"],
+      "guides": [
+        "tigerstyle",
+        "security-core",
+        "contract-core",
+        "change-risk",
+        "epistemics"
+      ],
       "mode": "compact"
     },
     "frontend": {
       "title": "Frontend",
       "description": "Frontend baseline for UI-heavy repositories where interface quality and maintainability matter daily.",
       "scope": "baseline",
-      "guides": ["tigerstyle", "uistyle", "maintainability", "observability"],
+      "guides": [
+        "tigerstyle",
+        "uistyle",
+        "maintainability",
+        "observability"
+      ],
       "mode": "compact"
     },
     "backend": {
@@ -39,7 +52,11 @@
       "title": "Docs",
       "description": "Documentation-heavy baseline emphasizing document structure, evidence quality, and maintainability.",
       "scope": "baseline",
-      "guides": ["diataxis", "epistemics", "maintainability"],
+      "guides": [
+        "diataxis",
+        "epistemics",
+        "maintainability"
+      ],
       "mode": "compact"
     },
     "security-sensitive": {
@@ -59,7 +76,12 @@
       "title": "Review",
       "description": "Temporary read-only review overlay for issue finding, evidence quality, and boundary-focused analysis.",
       "scope": "overlay",
-      "guides": ["tigerstyle", "change-risk", "epistemics", "maintainability"],
+      "guides": [
+        "tigerstyle",
+        "change-risk",
+        "epistemics",
+        "maintainability"
+      ],
       "mode": "compact",
       "behavior": {
         "writePolicy": "read-only",
@@ -83,28 +105,117 @@
       "title": "Debug",
       "description": "Temporary overlay for diagnosis, evidence gathering, instrumentation, and boundary-focused testing.",
       "scope": "overlay",
-      "guides": ["epistemics", "observability", "robustness-core", "testing"],
+      "guides": [
+        "epistemics",
+        "observability",
+        "robustness-core",
+        "testing"
+      ],
       "mode": "compact"
     },
     "design": {
       "title": "Design",
       "description": "Temporary overlay for planning, tradeoff analysis, and architecture-level option comparison.",
       "scope": "overlay",
-      "guides": ["epistemics", "maintainability", "performance"],
+      "guides": [
+        "epistemics",
+        "maintainability",
+        "performance"
+      ],
       "mode": "compact"
     },
     "docs-authoring": {
       "title": "Docs Authoring",
       "description": "Temporary overlay for documentation writing and restructuring with explicit documentation-mode discipline.",
       "scope": "overlay",
-      "guides": ["diataxis", "epistemics"],
+      "guides": [
+        "diataxis",
+        "epistemics"
+      ],
       "mode": "compact"
     },
     "release": {
       "title": "Release",
       "description": "Temporary overlay for rollout, compatibility verification, reproducibility, and change-risk review.",
       "scope": "overlay",
-      "guides": ["change-risk", "compatibility-evolution", "reproducibility-core", "testing"],
+      "guides": [
+        "change-risk",
+        "compatibility-evolution",
+        "reproducibility-core",
+        "testing"
+      ],
+      "mode": "compact"
+    },
+    "writing": {
+      "title": "Writing",
+      "description": "Baseline for repositories centered on technical, personal, loose, blog, poetry, and mixed prose writing.",
+      "scope": "baseline",
+      "guides": [
+        "writing",
+        "epistemics",
+        "privacy",
+        "diataxis",
+        "maintainability"
+      ],
+      "mode": "compact"
+    },
+    "essay-writing": {
+      "title": "Essay Writing",
+      "description": "Temporary overlay for essays, proposals, and posts that need explicit argument structure and evidence discipline.",
+      "scope": "overlay",
+      "guides": [
+        "writing",
+        "argument-structure",
+        "epistemics"
+      ],
+      "mode": "compact"
+    },
+    "creative-draft": {
+      "title": "Creative Draft",
+      "description": "Temporary overlay for exploratory prose, poetry, and voice experiments with explicit creative constraints.",
+      "scope": "overlay",
+      "guides": [
+        "writing",
+        "creative-constraints",
+        "novelty-budgeting"
+      ],
+      "mode": "compact"
+    },
+    "left-turn": {
+      "title": "Left Turn",
+      "description": "Temporary overlay for counter-intuitive ideation, reframing, and non-obvious option generation.",
+      "scope": "overlay",
+      "guides": [
+        "writing",
+        "counter-intuition-and-left-turn-thinking",
+        "novelty-budgeting",
+        "epistemics"
+      ],
+      "mode": "compact"
+    },
+    "anki-authoring": {
+      "title": "Anki Authoring",
+      "description": "Temporary overlay for generating and reviewing Anki cards and study sidecars.",
+      "scope": "overlay",
+      "guides": [
+        "anki-authoring",
+        "writing",
+        "epistemics"
+      ],
+      "mode": "compact"
+    },
+    "publish-check": {
+      "title": "Publish Check",
+      "description": "Temporary overlay for pre-publication review of privacy, claims, links, contracts, and reproducible projection.",
+      "scope": "overlay",
+      "guides": [
+        "writing",
+        "privacy",
+        "epistemics",
+        "contract-core",
+        "reproducibility-core",
+        "testing"
+      ],
       "mode": "compact"
     }
   }

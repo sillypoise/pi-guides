@@ -1,10 +1,22 @@
 {
   "version": 1,
   "precedence": [
-    { "id": "rulebook", "rank": 1 },
-    { "id": "heuristics", "rank": 2 },
-    { "id": "playbook", "rank": 3 },
-    { "id": "framework", "rank": 4 }
+    {
+      "id": "rulebook",
+      "rank": 1
+    },
+    {
+      "id": "heuristics",
+      "rank": 2
+    },
+    {
+      "id": "playbook",
+      "rank": 3
+    },
+    {
+      "id": "framework",
+      "rank": 4
+    }
   ],
   "guides": {
     "tigerstyle": {
@@ -12,7 +24,11 @@
       "archetype": "rulebook",
       "precedence": "rulebook",
       "summary": "Base language-agnostic TigerStyle rulebook.",
-      "tags": ["core", "language-agnostic", "tigerstyle"],
+      "tags": [
+        "core",
+        "language-agnostic",
+        "tigerstyle"
+      ],
       "defaults": {
         "compact": "strict-compact",
         "full": "strict-full"
@@ -36,7 +52,10 @@
       "archetype": "rulebook",
       "precedence": "rulebook",
       "summary": "Cross-stack security invariants and fail-safe rulebook.",
-      "tags": ["security", "language-agnostic"],
+      "tags": [
+        "security",
+        "language-agnostic"
+      ],
       "defaults": {
         "compact": "strict-compact",
         "full": "strict-full"
@@ -60,7 +79,10 @@
       "archetype": "rulebook",
       "precedence": "rulebook",
       "summary": "Cross-stack contract semantics and compatibility invariants.",
-      "tags": ["contracts", "language-agnostic"],
+      "tags": [
+        "contracts",
+        "language-agnostic"
+      ],
       "defaults": {
         "compact": "strict-compact",
         "full": "strict-full"
@@ -84,7 +106,10 @@
       "archetype": "rulebook",
       "precedence": "rulebook",
       "summary": "Cross-stack failure, concurrency, and integrity invariants.",
-      "tags": ["robustness", "language-agnostic"],
+      "tags": [
+        "robustness",
+        "language-agnostic"
+      ],
       "defaults": {
         "compact": "strict-compact",
         "full": "strict-full"
@@ -108,7 +133,10 @@
       "archetype": "rulebook",
       "precedence": "rulebook",
       "summary": "Cross-stack deterministic environment, build, test, and provenance invariants.",
-      "tags": ["reproducibility", "language-agnostic"],
+      "tags": [
+        "reproducibility",
+        "language-agnostic"
+      ],
       "defaults": {
         "compact": "strict-compact",
         "full": "strict-full"
@@ -132,7 +160,11 @@
       "archetype": "heuristics",
       "precedence": "heuristics",
       "summary": "Cross-platform UI rulebook for interface-heavy work.",
-      "tags": ["ui", "frontend", "language-agnostic"],
+      "tags": [
+        "ui",
+        "frontend",
+        "language-agnostic"
+      ],
       "defaults": {
         "compact": "strict-compact",
         "full": "strict-full"
@@ -156,7 +188,10 @@
       "archetype": "heuristics",
       "precedence": "heuristics",
       "summary": "Cross-stack diagnostics and signal-quality heuristics.",
-      "tags": ["observability", "language-agnostic"],
+      "tags": [
+        "observability",
+        "language-agnostic"
+      ],
       "defaults": {
         "compact": "strict-compact",
         "full": "strict-full"
@@ -180,7 +215,11 @@
       "archetype": "heuristics",
       "precedence": "heuristics",
       "summary": "Cross-stack rollout safety and migration-risk heuristics.",
-      "tags": ["migration", "rollout", "language-agnostic"],
+      "tags": [
+        "migration",
+        "rollout",
+        "language-agnostic"
+      ],
       "defaults": {
         "compact": "strict-compact",
         "full": "strict-full"
@@ -204,7 +243,11 @@
       "archetype": "heuristics",
       "precedence": "heuristics",
       "summary": "Evidence, confidence, and uncertainty-quality heuristics.",
-      "tags": ["analysis", "debugging", "language-agnostic"],
+      "tags": [
+        "analysis",
+        "debugging",
+        "language-agnostic"
+      ],
       "defaults": {
         "compact": "strict-compact",
         "full": "strict-full"
@@ -228,7 +271,10 @@
       "archetype": "heuristics",
       "precedence": "heuristics",
       "summary": "Cross-stack latency, throughput, and resource-efficiency heuristics.",
-      "tags": ["performance", "language-agnostic"],
+      "tags": [
+        "performance",
+        "language-agnostic"
+      ],
       "defaults": {
         "compact": "strict-compact",
         "full": "strict-full"
@@ -252,7 +298,10 @@
       "archetype": "heuristics",
       "precedence": "heuristics",
       "summary": "Cross-stack data minimization, retention, deletion, and consent-state integrity heuristics.",
-      "tags": ["privacy", "language-agnostic"],
+      "tags": [
+        "privacy",
+        "language-agnostic"
+      ],
       "defaults": {
         "compact": "strict-compact",
         "full": "strict-full"
@@ -276,7 +325,11 @@
       "archetype": "heuristics",
       "precedence": "heuristics",
       "summary": "Cross-stack on-call readiness, recovery ergonomics, and escalation-quality heuristics.",
-      "tags": ["operability", "operations", "language-agnostic"],
+      "tags": [
+        "operability",
+        "operations",
+        "language-agnostic"
+      ],
       "defaults": {
         "compact": "strict-compact",
         "full": "strict-full"
@@ -300,7 +353,10 @@
       "archetype": "heuristics",
       "precedence": "heuristics",
       "summary": "Cross-stack coupling, complexity, and ownership heuristics for long-term changeability.",
-      "tags": ["maintainability", "language-agnostic"],
+      "tags": [
+        "maintainability",
+        "language-agnostic"
+      ],
       "defaults": {
         "compact": "strict-compact",
         "full": "strict-full"
@@ -324,7 +380,11 @@
       "archetype": "heuristics",
       "precedence": "heuristics",
       "summary": "Seam-first and reversible modernization heuristics for existing systems.",
-      "tags": ["legacy", "migration", "language-agnostic"],
+      "tags": [
+        "legacy",
+        "migration",
+        "language-agnostic"
+      ],
       "defaults": {
         "compact": "strict-compact",
         "full": "strict-full"
@@ -348,7 +408,11 @@
       "archetype": "heuristics",
       "precedence": "heuristics",
       "summary": "Staged refactor sequencing and coexistence-state heuristics.",
-      "tags": ["refactoring", "migration", "language-agnostic"],
+      "tags": [
+        "refactoring",
+        "migration",
+        "language-agnostic"
+      ],
       "defaults": {
         "compact": "strict-compact",
         "full": "strict-full"
@@ -372,7 +436,11 @@
       "archetype": "heuristics",
       "precedence": "heuristics",
       "summary": "Compatibility-safe boundary evolution and deprecation heuristics.",
-      "tags": ["compatibility", "migration", "language-agnostic"],
+      "tags": [
+        "compatibility",
+        "migration",
+        "language-agnostic"
+      ],
       "defaults": {
         "compact": "strict-compact",
         "full": "strict-full"
@@ -396,7 +464,10 @@
       "archetype": "heuristics",
       "precedence": "heuristics",
       "summary": "Documentation architecture and mode-boundary heuristics.",
-      "tags": ["documentation", "language-agnostic"],
+      "tags": [
+        "documentation",
+        "language-agnostic"
+      ],
       "defaults": {
         "compact": "strict-compact",
         "full": "strict-full"
@@ -420,7 +491,10 @@
       "archetype": "playbook",
       "precedence": "playbook",
       "summary": "Practical testing defaults and implementation patterns.",
-      "tags": ["testing", "language-agnostic"],
+      "tags": [
+        "testing",
+        "language-agnostic"
+      ],
       "defaults": {
         "compact": "pragmatic-compact",
         "full": "pragmatic-full"
@@ -435,6 +509,178 @@
           "path": "files/testing/testing-pragmatic-full.md",
           "size": "full",
           "strictness": "pragmatic"
+        }
+      },
+      "skill": null
+    },
+    "writing": {
+      "title": "Writing",
+      "archetype": "heuristics",
+      "precedence": "heuristics",
+      "summary": "Prose clarity, flow, tone, revision discipline, and transparency heuristics.",
+      "tags": [
+        "writing",
+        "prose",
+        "language-agnostic"
+      ],
+      "defaults": {
+        "compact": "strict-compact",
+        "full": "strict-full"
+      },
+      "variants": {
+        "strict-compact": {
+          "path": "files/writing/writing-strict-compact.md",
+          "size": "compact",
+          "strictness": "strict"
+        },
+        "strict-full": {
+          "path": "files/writing/writing-strict-full.md",
+          "size": "full",
+          "strictness": "strict"
+        }
+      },
+      "skill": null
+    },
+    "argument-structure": {
+      "title": "Argument-Structure",
+      "archetype": "playbook",
+      "precedence": "playbook",
+      "summary": "Decision, proposal, and problem-analysis argument structure playbook.",
+      "tags": [
+        "writing",
+        "argument",
+        "analysis",
+        "language-agnostic"
+      ],
+      "defaults": {
+        "compact": "pragmatic-compact",
+        "full": "pragmatic-full"
+      },
+      "variants": {
+        "pragmatic-compact": {
+          "path": "files/argument-structure/argument-structure-pragmatic-compact.md",
+          "size": "compact",
+          "strictness": "pragmatic"
+        },
+        "pragmatic-full": {
+          "path": "files/argument-structure/argument-structure-pragmatic-full.md",
+          "size": "full",
+          "strictness": "pragmatic"
+        }
+      },
+      "skill": null
+    },
+    "creative-constraints": {
+      "title": "Creative-Constraints",
+      "archetype": "heuristics",
+      "precedence": "heuristics",
+      "summary": "Intentional constraint design and constrained exploration heuristics.",
+      "tags": [
+        "writing",
+        "creativity",
+        "language-agnostic"
+      ],
+      "defaults": {
+        "compact": "strict-compact",
+        "full": "strict-full"
+      },
+      "variants": {
+        "strict-compact": {
+          "path": "files/creative-constraints/creative-constraints-strict-compact.md",
+          "size": "compact",
+          "strictness": "strict"
+        },
+        "strict-full": {
+          "path": "files/creative-constraints/creative-constraints-strict-full.md",
+          "size": "full",
+          "strictness": "strict"
+        }
+      },
+      "skill": null
+    },
+    "novelty-budgeting": {
+      "title": "Novelty-Budgeting",
+      "archetype": "heuristics",
+      "precedence": "heuristics",
+      "summary": "Explicit novelty ceilings and risk-aware novelty allocation heuristics.",
+      "tags": [
+        "writing",
+        "creativity",
+        "risk",
+        "language-agnostic"
+      ],
+      "defaults": {
+        "compact": "strict-compact",
+        "full": "strict-full"
+      },
+      "variants": {
+        "strict-compact": {
+          "path": "files/novelty-budgeting/novelty-budgeting-strict-compact.md",
+          "size": "compact",
+          "strictness": "strict"
+        },
+        "strict-full": {
+          "path": "files/novelty-budgeting/novelty-budgeting-strict-full.md",
+          "size": "full",
+          "strictness": "strict"
+        }
+      },
+      "skill": null
+    },
+    "counter-intuition-and-left-turn-thinking": {
+      "title": "Counter-Intuition-and-Left-Turn-Thinking",
+      "archetype": "heuristics",
+      "precedence": "heuristics",
+      "summary": "Counter-intuitive option generation and productive left-turn thinking heuristics.",
+      "tags": [
+        "writing",
+        "creativity",
+        "ideation",
+        "language-agnostic"
+      ],
+      "defaults": {
+        "compact": "strict-compact",
+        "full": "strict-full"
+      },
+      "variants": {
+        "strict-compact": {
+          "path": "files/counter-intuition-and-left-turn-thinking/counter-intuition-and-left-turn-thinking-strict-compact.md",
+          "size": "compact",
+          "strictness": "strict"
+        },
+        "strict-full": {
+          "path": "files/counter-intuition-and-left-turn-thinking/counter-intuition-and-left-turn-thinking-strict-full.md",
+          "size": "full",
+          "strictness": "strict"
+        }
+      },
+      "skill": null
+    },
+    "anki-authoring": {
+      "title": "Anki-Authoring",
+      "archetype": "playbook",
+      "precedence": "playbook",
+      "summary": "Flashcard authoring and study-card quality playbook.",
+      "tags": [
+        "writing",
+        "learning",
+        "anki",
+        "language-agnostic"
+      ],
+      "defaults": {
+        "compact": "strict-compact",
+        "full": "strict-full"
+      },
+      "variants": {
+        "strict-compact": {
+          "path": "files/anki-authoring/anki-authoring-strict-compact.md",
+          "size": "compact",
+          "strictness": "strict"
+        },
+        "strict-full": {
+          "path": "files/anki-authoring/anki-authoring-strict-full.md",
+          "size": "full",
+          "strictness": "strict"
         }
       },
       "skill": null
