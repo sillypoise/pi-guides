@@ -97,7 +97,7 @@ Use this when the repository should carry its own package pin.
 2. Run one of:
 
 ```text
-/guide-init git:git@github.com:sillypoise/pi-guides@v0.3.0
+/guide-init git:git@github.com:sillypoise/pi-guides@v0.5.0
 ```
 
 or later, once published to npm:
@@ -280,7 +280,7 @@ Example global pi settings using a pinned git source:
 ```json
 {
   "packages": [
-    "git:git@github.com:sillypoise/pi-guides@v0.3.0"
+    "git:git@github.com:sillypoise/pi-guides@v0.5.0"
   ]
 }
 ```
@@ -307,7 +307,7 @@ Git example:
 ```json
 {
   "packages": [
-    "git:git@github.com:sillypoise/pi-guides@v0.3.0"
+    "git:git@github.com:sillypoise/pi-guides@v0.5.0"
   ]
 }
 ```
@@ -384,7 +384,7 @@ Example:
 ```json
 {
   "packages": [
-    "git:git@github.com:sillypoise/pi-guides@v0.3.0"
+    "git:git@github.com:sillypoise/pi-guides@v0.5.0"
   ]
 }
 ```
@@ -518,7 +518,7 @@ Current v0.1 behavior:
 - if the package is already available globally, plain `/guide-init` skips `.pi/settings.json` automatically
 - otherwise, plain `/guide-init` writes `.pi/settings.json` using the package git tag by default
 - you can pass an explicit package source, for example:
-  - `/guide-init git:git@github.com:sillypoise/pi-guides@v0.3.0`
+  - `/guide-init git:git@github.com:sillypoise/pi-guides@v0.5.0`
   - `/guide-init npm:@sillypoise/pi-guides@0.3.0`
 - you can use `--dev` to write a configured local package path for testing unreleased changes
 - `--dev` resolves from `PI_GUIDES_DEV_SOURCE` or settings field `piGuidesDevSource`
