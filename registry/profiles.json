@@ -13,14 +13,13 @@
     },
     "coreplus": {
       "title": "CorePlus",
-      "description": "Good all-rounder baseline that keeps TigerStyle minimality while adding simplicity, security, contract, change-risk, and epistemic quality.",
+      "description": "Good all-rounder baseline that keeps TigerStyle minimality while adding simplicity, security, contract, and epistemic quality.",
       "scope": "baseline",
       "guides": [
         "tigerstyle",
         "simplicity-core",
         "security-core",
         "contract-core",
-        "change-risk",
         "epistemics"
       ],
       "mode": "compact"
