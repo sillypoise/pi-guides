@@ -18,6 +18,7 @@ Current v0.1 scope:
 - session-scoped overlay activation
 - imported language-agnostic foundation guides including:
   - TigerStyle
+  - Simplicity-Core
   - Security-Core
   - Contract-Core
   - Robustness-Core
@@ -611,9 +612,11 @@ Each guide entry defines:
 - defaults for compact and full resolution
 - available variants and their file paths
 
-Current v0.1 registry contains only one guide family:
+Current v0.1 registry contains multiple language-agnostic guide families.
+The minimal core rulebook sequence starts with:
 
 - `tigerstyle`
+- `simplicity-core`
 
 ---
 
@@ -621,13 +624,14 @@ Current v0.1 registry contains only one guide family:
 
 `registry/profiles.json` is the machine-canonical profile registry.
 
-Current v0.1 profile set:
+Current v0.1 profile set includes baseline and overlay profiles from `registry/profiles.json`.
 
-- `core`
+The minimal coding baseline is `core`.
 
 This currently expands to:
 
 - `tigerstyle`
+- `simplicity-core`
 
 Profiles are intentionally simple in v0.1:
 

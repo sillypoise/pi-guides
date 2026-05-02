@@ -31,6 +31,8 @@ const FIXTURE_RELATIVE_PATHS = [
   "prompts/guide-review.md",
   "files/tigerstyle-strict-compact.md",
   "files/tigerstyle-strict-full.md",
+  "files/simplicity-core/simplicity-core-strict-compact.md",
+  "files/simplicity-core/simplicity-core-strict-full.md",
   "files/security-core/security-core-strict-compact.md",
   "files/security-core/security-core-strict-full.md",
   "files/contract-core/contract-core-strict-compact.md",

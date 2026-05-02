@@ -335,7 +335,7 @@ test("session_start sets a compact one-line widget by default", async () => {
         await sessionStart({}, ctx);
 
         const widgetLines = ctx.widgets.at(-1)?.value;
-        assert.deepEqual(widgetLines, ["guides: coreplus | compact | 5 guides"]);
+        assert.deepEqual(widgetLines, ["guides: coreplus | compact | 6 guides"]);
     });
 });
 
@@ -864,7 +864,7 @@ test("compact widget shows auto-commit when enabled", async () => {
         await sessionStart({}, ctx);
 
         const widgetLines = ctx.widgets.at(-1)?.value;
-        assert.deepEqual(widgetLines, ["guides: coreplus | compact | auto-commit | 5 guides"]);
+        assert.deepEqual(widgetLines, ["guides: coreplus | compact | auto-commit | 6 guides"]);
     });
 });
 

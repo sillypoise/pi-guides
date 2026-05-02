@@ -47,6 +47,34 @@
       },
       "skill": null
     },
+    "simplicity-core": {
+      "title": "Simplicity-Core",
+      "archetype": "rulebook",
+      "precedence": "rulebook",
+      "summary": "Complexity admission, scope discipline, and active refusal rulebook.",
+      "tags": [
+        "core",
+        "simplicity",
+        "language-agnostic"
+      ],
+      "defaults": {
+        "compact": "strict-compact",
+        "full": "strict-full"
+      },
+      "variants": {
+        "strict-compact": {
+          "path": "files/simplicity-core/simplicity-core-strict-compact.md",
+          "size": "compact",
+          "strictness": "strict"
+        },
+        "strict-full": {
+          "path": "files/simplicity-core/simplicity-core-strict-full.md",
+          "size": "full",
+          "strictness": "strict"
+        }
+      },
+      "skill": null
+    },
     "security-core": {
       "title": "Security-Core",
       "archetype": "rulebook",
