@@ -52,6 +52,9 @@ exist before TigerStyle governs how that machinery is implemented.
 
 ## Admission Control (ADMIT)
 
+Default posture: non-trivial added complexity is denied unless current requirements prove it
+necessary.
+
 ### SIMPLE-ADMIT-001 - Complexity MUST be admitted only for current requirements.
 
 New complexity MUST NOT be justified by speculative futures, possible later reuse, or aesthetic
@@ -84,6 +87,22 @@ Changes that add public API, configuration, persistence, concurrency, dependenci
 code MUST include stronger justification than purely local implementation changes.
 
 Rationale: externally visible and stateful complexity has higher carrying cost and removal risk.
+
+### SIMPLE-ADMIT-005 - Complexity proposals MUST receive an explicit admission decision.
+
+Before implementing a proposed solution that adds non-trivial complexity, the agent MUST choose
+and state one of:
+
+- reject the complexity and use a simpler path;
+- narrow the complexity to the current requirement;
+- defer the complexity until a current requirement exists;
+- admit the complexity because a current requirement makes it necessary.
+
+An admission decision MUST name the current requirement and why an existing or smaller alternative
+is insufficient.
+
+Rationale: visible admission decisions turn simplicity from hidden preference into enforceable
+pushback behavior.
 
 ---
 
@@ -211,7 +230,7 @@ Rationale: unnecessary migration paths create complexity without reducing real t
 
 ### SIMPLE-LOCAL-001 - Changes MUST stay at the narrowest effective seam.
 
-Implementation should touch the fewest files, interfaces, and concepts compatible with the current
+Implementation MUST touch the fewest files, interfaces, and concepts compatible with the current
 requirement and active tier-1 constraints.
 
 Rationale: locality lowers review burden and keeps rollback simple.
@@ -273,6 +292,7 @@ When guidance conflicts:
 - Admission path: every new abstraction, option, dependency, state, or broad refactor has
   current need.
 - Admission path: a smaller local alternative was considered or used.
+- Admission path: complexity proposals received explicit reject, narrow, defer, or admit decisions.
 - Refusal path: unnecessary proposed complexity was rejected, narrowed, or deferred.
 - Scope path: unrequested adjacent work is absent or explicitly required for the task.
 - Abstraction path: no general abstraction is introduced from one current use.

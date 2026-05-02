@@ -22,6 +22,9 @@ Definitions:
 
 ## Admission Control
 
+Default posture: non-trivial added complexity is denied unless current requirements prove it
+necessary.
+
 **SIMPLE-ADMIT-001** - Complexity MUST be admitted only for current requirements.
 
 **SIMPLE-ADMIT-002** - The smallest sufficient change MUST be preferred.
@@ -29,6 +32,8 @@ Definitions:
 **SIMPLE-ADMIT-003** - Existing mechanisms MUST be reused before new mechanisms are introduced.
 
 **SIMPLE-ADMIT-004** - Complexity justification MUST be proportional to introduced surface area.
+
+**SIMPLE-ADMIT-005** - Non-trivial complexity proposals MUST receive an explicit admission decision.
 
 ## Refusal and Scope Control
 
@@ -86,6 +91,7 @@ Definitions:
 
 - Every new abstraction, option, dependency, state, or broad refactor has current need.
 - A smaller local alternative was considered or used.
+- Complexity proposals received explicit reject, narrow, defer, or admit decisions.
 - Unnecessary proposed complexity was rejected, narrowed, or deferred.
 - Unrequested adjacent work is absent or explicitly required for the task.
 - No general abstraction is introduced from one current use.
