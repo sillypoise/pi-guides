@@ -262,7 +262,7 @@ test("guide-init writes the default git package source when settings are request
             assert.equal(ctx.reloadCount, 1);
             const settings = JSON.parse(readFileSync(join(rootPath, ".pi", "settings.json"), "utf8"));
             assert.deepEqual(settings, {
-                packages: ["git:git@github.com:sillypoise/pi-guides@v0.6.0"],
+                packages: ["git:git@github.com:sillypoise/pi-guides@v0.7.0"],
             });
         });
     });
@@ -903,7 +903,7 @@ test("all shipped profiles use full mode without per-guide profile defaults", as
         new URL("../registry/profiles.json", import.meta.url), "utf8",
     ));
     const profiles = Object.entries(registry.profiles);
-    assert.equal(profiles.length, 18);
+    assert.equal(profiles.length, 19);
     for (const [profileId, profile] of profiles) {
         assert.equal(profile.mode, "full", profileId);
         assert.equal(Object.hasOwn(profile, "variants"), false, profileId);

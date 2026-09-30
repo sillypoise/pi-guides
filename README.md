@@ -97,7 +97,7 @@ Use this when the repository should carry its own package pin.
 2. Run one of:
 
 ```text
-/guide-init git:git@github.com:sillypoise/pi-guides@v0.6.0
+/guide-init git:git@github.com:sillypoise/pi-guides@v0.7.0
 ```
 
 or later, once published to npm:
@@ -280,7 +280,7 @@ Example global pi settings using a pinned git source:
 ```json
 {
   "packages": [
-    "git:git@github.com:sillypoise/pi-guides@v0.6.0"
+    "git:git@github.com:sillypoise/pi-guides@v0.7.0"
   ]
 }
 ```
@@ -307,7 +307,7 @@ Git example:
 ```json
 {
   "packages": [
-    "git:git@github.com:sillypoise/pi-guides@v0.6.0"
+    "git:git@github.com:sillypoise/pi-guides@v0.7.0"
   ]
 }
 ```
@@ -384,7 +384,7 @@ Example:
 ```json
 {
   "packages": [
-    "git:git@github.com:sillypoise/pi-guides@v0.6.0"
+    "git:git@github.com:sillypoise/pi-guides@v0.7.0"
   ]
 }
 ```
@@ -518,7 +518,7 @@ Current v0.1 behavior:
 - if the package is already available globally, plain `/guide-init` skips `.pi/settings.json` automatically
 - otherwise, plain `/guide-init` writes `.pi/settings.json` using the package git tag by default
 - you can pass an explicit package source, for example:
-  - `/guide-init git:git@github.com:sillypoise/pi-guides@v0.6.0`
+  - `/guide-init git:git@github.com:sillypoise/pi-guides@v0.7.0`
   - `/guide-init npm:@sillypoise/pi-guides@0.3.0`
 - you can use `--dev` to write a configured local package path for testing unreleased changes
 - `--dev` resolves from `PI_GUIDES_DEV_SOURCE` or settings field `piGuidesDevSource`
@@ -593,6 +593,11 @@ Current v0.1 behavior:
 - the next-turn overlay stacks on top of the repo baseline and any active session overlay
 - the next-turn overlay is cleared automatically at the end of that turn
 - `review` can therefore be used as a read-only one-turn review mode
+- `/guide-next jev` queues the concise Jev usage guide for one turn; the same `jev` guide id
+  can also be listed in `.pi/guides.json` under `guides` or `additions` with a profile
+
+The Jev guide is research-derived, not validated by experiments in this repository. Its compact
+and full variants currently contain identical concise text; neither mode adds extra claims.
 
 ---
 

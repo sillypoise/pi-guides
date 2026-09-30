@@ -106,6 +106,15 @@
       ],
       "mode": "full"
     },
+    "jev": {
+      "title": "Jev",
+      "description": "Temporary overlay for bounded Jev semantic-decision design and review.",
+      "scope": "overlay",
+      "guides": [
+        "jev"
+      ],
+      "mode": "full"
+    },
     "debug": {
       "title": "Debug",
       "description": "Temporary overlay for diagnosis, evidence gathering, instrumentation, and boundary-focused testing.",

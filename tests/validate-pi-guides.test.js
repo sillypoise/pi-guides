@@ -49,6 +49,8 @@ const FIXTURE_RELATIVE_PATHS = [
   "files/change-risk/change-risk-strict-full.md",
   "files/epistemics/epistemics-strict-compact.md",
   "files/epistemics/epistemics-strict-full.md",
+  "files/jev/jev-strict-compact.md",
+  "files/jev/jev-strict-full.md",
   "files/performance/performance-strict-compact.md",
   "files/performance/performance-strict-full.md",
   "files/privacy/privacy-strict-compact.md",

@@ -294,6 +294,33 @@
       },
       "skill": null
     },
+    "jev": {
+      "title": "Jev",
+      "archetype": "heuristics",
+      "precedence": "heuristics",
+      "summary": "Bounded semantic decisions with explicit evidence, policy, and failure gates.",
+      "tags": [
+        "jev",
+        "semantic-decision"
+      ],
+      "defaults": {
+        "compact": "strict-compact",
+        "full": "strict-full"
+      },
+      "variants": {
+        "strict-compact": {
+          "path": "files/jev/jev-strict-compact.md",
+          "size": "compact",
+          "strictness": "strict"
+        },
+        "strict-full": {
+          "path": "files/jev/jev-strict-full.md",
+          "size": "full",
+          "strictness": "strict"
+        }
+      },
+      "skill": null
+    },
     "performance": {
       "title": "Performance",
       "archetype": "heuristics",
